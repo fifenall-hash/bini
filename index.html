@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>비나메이트 마스터 모바일</title>
+    <!-- 체스 규칙을 처리하는 chess.js 라이브러리 로드 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <style>
         body { font-family: 'Arial', sans-serif; margin: 0; padding: 10px; background-color: #f0f0f0; display: flex; flex-direction: column; align-items: center; }
         h2 { margin: 10px 0; font-size: 20px; text-align: center; }
         #status { font-weight: bold; margin-bottom: 5px; color: #333; }
-        #feedback { font-size: 14px; margin-bottom: 15px; color: blue; text-align: center; min-height: 20px; }
+        #feedback { font-size: 14px; margin-bottom: 15px; color: blue; text-align: center; min-height: 20px; font-weight: bold; }
         
         /* 모바일 화면에 꽉 차면서 정사각형 유지 */
         #board-container { position: relative; width: 100%; max-width: 500px; aspect-ratio: 1 / 1; border: 2px solid #333; }
@@ -38,12 +39,13 @@
 </head>
 <body>
 
-    <h2>비나메이트 마스터 (튜터 모드)</h2>
+    <h2>비나메이트 마스터 (오답 튜터 모드)</h2>
     <div id="status">로딩 중...</div>
     <div id="feedback">체스 엔진을 준비하고 있습니다.</div>
 
     <div id="board-container">
         <div id="board"></div>
+        <!-- 뷰박스를 0~8로 설정하여 체스 칸(1칸=1)과 1:1 매칭 -->
         <svg id="svg-layer" viewBox="0 0 8 8">
             <defs>
                 <marker id="arrowhead" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto">
@@ -59,7 +61,7 @@
             <label><input type="radio" name="mode" value="random"> 랜덤 (쉬움)</label>
             <label><input type="radio" name="mode" value="engine" checked> 엔진 (어려움)</label>
         </div>
-        <button onclick="newGame()">새 연습 시작</button>
+        <button onclick="newGame()">무작위 새 연습 시작</button>
     </div>
 
     <script>
@@ -77,23 +79,13 @@
             'k': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bk.png'
         };
 
-        const practiceFens = [
-            "8/8/8/8/8/8/4k3/4K1BN w - - 0 1",
-            "8/8/4k3/8/8/4N3/4B3/4K3 w - - 0 1",
-            "8/8/8/8/4k3/8/3K1BN1/8 w - - 0 1",
-            "8/8/8/8/8/8/1k6/1N2K1B1 w - - 0 1"
-        ];
-
-        // CDN에서 Stockfish.js를 웹 워커로 직접 불러오는 마법의 코드
+        // CDN에서 Stockfish.js를 웹 워커로 직접 불러오기
         const workerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');`;
         const blob = new Blob([workerCode], {type: 'application/javascript'});
         const engine = new Worker(URL.createObjectURL(blob));
 
         engine.onmessage = function(event) {
             if (event.data === "uciok") {
-                document.getElementById('status').innerText = "현재 턴: 백(당신)";
-                document.getElementById('feedback').innerText = "환영합니다! 새 게임을 시작합니다.";
-                document.getElementById('feedback').style.color = "blue";
                 newGame();
             }
         };
@@ -116,11 +108,98 @@
             });
         }
 
-        // --- 3. UI 렌더링 함수 ---
+        // --- 3. 수학적 논리를 적용한 초고속 무작위 배치 함수 ---
+        function generateRandomValidFEN() {
+            while (true) {
+                // 1. 중복 없는 4개의 무작위 좌표(0~63) 뽑기
+                let squares = [];
+                while (squares.length < 4) {
+                    let randomSq = Math.floor(Math.random() * 64);
+                    if (!squares.includes(randomSq)) squares.push(randomSq);
+                }
+
+                const getPos = (sq) => ({ r: Math.floor(sq / 8), c: sq % 8 });
+                const wk = getPos(squares[0]); // 백 킹
+                const wb = getPos(squares[1]); // 백 비숍
+                const wn = getPos(squares[2]); // 백 나이트
+                const bk = getPos(squares[3]); // 흑 킹
+
+                let isValid = true;
+
+                // 2. 공격 검증: 흑 킹이 백 기물에 의해 공격받는지 검사
+                // A. 킹 인접 검사
+                if (Math.abs(wk.r - bk.r) <= 1 && Math.abs(wk.c - bk.c) <= 1) {
+                    isValid = false;
+                }
+
+                // B. 나이트 공격 검사
+                if (isValid) {
+                    let ndx = Math.abs(wn.r - bk.r);
+                    let ndy = Math.abs(wn.c - bk.c);
+                    if ((ndx === 1 && ndy === 2) || (ndx === 2 && ndy === 1)) {
+                        isValid = false;
+                    }
+                }
+
+                // C. 비숍 공격 검사
+                if (isValid) {
+                    let bdx = Math.abs(wb.r - bk.r);
+                    let bdy = Math.abs(wb.c - bk.c);
+                    
+                    if (bdx === bdy) { // 대각선 위치
+                        let isBlocked = false;
+                        let stepR = bk.r > wb.r ? 1 : -1;
+                        let stepC = bk.c > wb.c ? 1 : -1;
+                        let currR = wb.r + stepR;
+                        let currC = wb.c + stepC;
+
+                        while (currR !== bk.r && currC !== bk.c) {
+                            if ((currR === wk.r && currC === wk.c) || (currR === wn.r && currC === wn.c)) {
+                                isBlocked = true; // 중간에 다른 백 기물이 막아줌
+                                break;
+                            }
+                            currR += stepR;
+                            currC += stepC;
+                        }
+                        
+                        if (!isBlocked) isValid = false; // 막아주는 기물이 없으면 공격받는 상태
+                    }
+                }
+
+                // 3. 검사 통과 시 FEN 조립
+                if (isValid) {
+                    let board = Array.from({ length: 8 }, () => Array(8).fill(null));
+                    board[wk.r][wk.c] = 'K';
+                    board[wb.r][wb.c] = 'B';
+                    board[wn.r][wn.c] = 'N';
+                    board[bk.r][bk.c] = 'k';
+
+                    let fen = "";
+                    for (let r = 0; r < 8; r++) {
+                        let emptyCount = 0;
+                        for (let c = 0; c < 8; c++) {
+                            if (board[r][c] === null) {
+                                emptyCount++;
+                            } else {
+                                if (emptyCount > 0) fen += emptyCount;
+                                fen += board[r][c];
+                                emptyCount = 0;
+                            }
+                        }
+                        if (emptyCount > 0) fen += emptyCount;
+                        if (r < 7) fen += "/";
+                    }
+                    
+                    return fen + " w - - 0 1";
+                }
+            }
+        }
+
+        // --- 4. UI 렌더링 함수 ---
         function renderBoard() {
             const boardDiv = document.getElementById('board');
-            boardDiv.innerHTML = ''; // 기존 보드 지우기
-            const boardState = game.board(); // 8x8 배열 반환
+            boardDiv.innerHTML = ''; 
+            const boardState = game.board(); 
             const legalMoves = game.moves({ verbose: true });
 
             for (let r = 0; r < 8; r++) {
@@ -131,10 +210,8 @@
                     squareDiv.dataset.square = squareId;
                     squareDiv.onclick = () => handleSquareClick(squareId);
 
-                    // 선택된 칸 하이라이트
                     if (selectedSquare === squareId) squareDiv.classList.add('highlight');
 
-                    // 기물 그리기
                     const piece = boardState[r][c];
                     if (piece) {
                         const pieceSymbol = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
@@ -146,7 +223,6 @@
                         }
                     }
 
-                    // 이동 가능한 칸에 점 그리기
                     if (selectedSquare && legalMoves.some(m => m.from === selectedSquare && m.to === squareId)) {
                         const dot = document.createElement('div');
                         dot.className = 'dot';
@@ -162,13 +238,11 @@
         function drawArrow() {
             const arrow = document.getElementById('tutor-arrow');
             if (missedBestMove) {
-                // e.g., "e2e4" -> from: "e2", to: "e4"
                 const fromFile = files.indexOf(missedBestMove.charAt(0));
                 const fromRank = 8 - parseInt(missedBestMove.charAt(1));
                 const toFile = files.indexOf(missedBestMove.charAt(2));
                 const toRank = 8 - parseInt(missedBestMove.charAt(3));
 
-                // 격자 중앙 좌표 (0.5 추가)
                 arrow.setAttribute('x1', fromFile + 0.5);
                 arrow.setAttribute('y1', fromRank + 0.5);
                 arrow.setAttribute('x2', toFile + 0.5);
@@ -194,15 +268,18 @@
             }
         }
 
-        // --- 4. 게임 로직 ---
+        // --- 5. 게임 로직 ---
         function newGame() {
-            const fen = practiceFens[Math.floor(Math.random() * practiceFens.length)];
+            const fen = generateRandomValidFEN();
             game.load(fen);
+            
             selectedSquare = null;
             missedBestMove = null;
             isCalculating = false;
-            document.getElementById('feedback').innerText = "새 게임 시작! 첫 수를 고민해보세요.";
+            
+            document.getElementById('feedback').innerText = "무작위 배치 완료! 첫 수를 고민해보세요.";
             document.getElementById('feedback').style.color = "blue";
+            
             renderBoard();
             updateStatus();
         }
@@ -212,7 +289,6 @@
 
             const piece = game.get(square);
 
-            // 기물 선택
             if (selectedSquare === null) {
                 if (piece && piece.color === 'w') {
                     selectedSquare = square;
@@ -222,21 +298,18 @@
                 return;
             }
 
-            // 이동 시도
             const moves = game.moves({ verbose: true });
             const move = moves.find(m => m.from === selectedSquare && m.to === square);
 
             if (move) {
-                // 합법적인 이동인 경우 -> 튜터 분석 시작
                 isCalculating = true;
                 selectedSquare = null;
                 document.getElementById('status').innerText = "당신의 수를 평가 중... (1초)";
                 renderBoard();
 
                 const currentFen = game.fen();
-                const bestMoveEngine = await getBestMove(currentFen, 1000); // 1초 연산
+                const bestMoveEngine = await getBestMove(currentFen, 1000); 
                 
-                // 엔진의 수(예: "e2e4")와 플레이어의 수 비교
                 const playerMoveEngineFormat = move.from + move.to;
                 
                 if (playerMoveEngineFormat === bestMoveEngine) {
@@ -244,7 +317,6 @@
                     document.getElementById('feedback').style.color = "green";
                     missedBestMove = null;
                 } else {
-                    // 정답의 SAN(기보) 표기법을 얻기 위해 임시 게임 보드 사용
                     const tempGame = new Chess(currentFen);
                     const correctMove = tempGame.move(bestMoveEngine, { sloppy: true });
                     document.getElementById('feedback').innerText = `아쉬운 수입니다 (${move.san}). 원래 뒀어야 할 수: ${correctMove.san}`;
@@ -252,17 +324,14 @@
                     missedBestMove = bestMoveEngine;
                 }
 
-                // 이동 적용
                 game.move(move.san);
                 isCalculating = false;
                 renderBoard();
                 updateStatus();
 
-                // 컴퓨터 턴 시작
                 setTimeout(makeComputerMove, 100);
 
             } else {
-                // 다른 내 기물 선택
                 if (piece && piece.color === 'w') {
                     selectedSquare = square;
                     missedBestMove = null;
@@ -287,7 +356,6 @@
                 game.move(bestMove, { sloppy: true });
                 isCalculating = false;
             } else {
-                // 랜덤 모드
                 const moves = game.moves();
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
                 game.move(randomMove);
