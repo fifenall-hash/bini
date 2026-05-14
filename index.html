@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>비나메이트 마스터 모바일</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <style>
+        body { font-family: 'Arial', sans-serif; margin: 0; padding: 10px; background-color: #f0f0f0; display: flex; flex-direction: column; align-items: center; }
+        h2 { margin: 10px 0; font-size: 20px; text-align: center; }
+        #status { font-weight: bold; margin-bottom: 5px; color: #333; }
+        #feedback { font-size: 14px; margin-bottom: 15px; color: blue; text-align: center; min-height: 20px; }
+        
+        /* 모바일 화면에 꽉 차면서 정사각형 유지 */
+        #board-container { position: relative; width: 100%; max-width: 500px; aspect-ratio: 1 / 1; border: 2px solid #333; }
+        #board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; }
+        
+        .square { display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
+        .light { background-color: #EEEED2; }
+        .dark { background-color: #769656; }
+        .highlight { background-color: #F6F669 !important; }
+        
+        /* 이동 가능한 칸에 찍히는 점 */
+        .dot { width: 30%; height: 30%; background-color: rgba(0, 0, 0, 0.25); border-radius: 50%; pointer-events: none; }
+        
+        /* 체스 기물 이미지 */
+        .piece { width: 90%; height: 90%; background-size: cover; background-position: center; pointer-events: none; }
+        
+        /* 오답 노트용 화살표 그리기 레이어 */
+        #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        /* 하단 컨트롤 패널 */
+        #controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
+        .mode-select { display: flex; gap: 15px; font-size: 14px; }
+        button { padding: 12px 20px; font-size: 16px; font-weight: bold; background-color: #4CAF50; color: white; border: none; border-radius: 8px; width: 100%; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button:active { background-color: #45a049; transform: translateY(2px); }
+    </style>
+</head>
+<body>
+
+    <h2>비나메이트 마스터 (튜터 모드)</h2>
+    <div id="status">로딩 중...</div>
+    <div id="feedback">체스 엔진을 준비하고 있습니다.</div>
+
+    <div id="board-container">
+        <div id="board"></div>
+        <svg id="svg-layer" viewBox="0 0 8 8">
+            <defs>
+                <marker id="arrowhead" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto">
+                    <polygon points="0 0, 3 1.5, 0 3" fill="#e74c3c" />
+                </marker>
+            </defs>
+            <line id="tutor-arrow" x1="0" y1="0" x2="0" y2="0" stroke="#e74c3c" stroke-width="0.15" marker-end="url(#arrowhead)" display="none" />
+        </svg>
+    </div>
+
+    <div id="controls">
+        <div class="mode-select">
+            <label><input type="radio" name="mode" value="random"> 랜덤 (쉬움)</label>
+            <label><input type="radio" name="mode" value="engine" checked> 엔진 (어려움)</label>
+        </div>
+        <button onclick="newGame()">새 연습 시작</button>
+    </div>
+
+    <script>
+        // --- 1. 초기 설정 및 엔진 연결 ---
+        const game = new Chess();
+        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+        let selectedSquare = null;
+        let isCalculating = false;
+        let missedBestMove = null;
+
+        const pieceUrls = {
+            'K': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wk.png',
+            'B': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wb.png',
+            'N': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wn.png',
+            'k': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bk.png'
+        };
+
+        const practiceFens = [
+            "8/8/8/8/8/8/4k3/4K1BN w - - 0 1",
+            "8/8/4k3/8/8/4N3/4B3/4K3 w - - 0 1",
+            "8/8/8/8/4k3/8/3K1BN1/8 w - - 0 1",
+            "8/8/8/8/8/8/1k6/1N2K1B1 w - - 0 1"
+        ];
+
+        // CDN에서 Stockfish.js를 웹 워커로 직접 불러오는 마법의 코드
+        const workerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');`;
+        const blob = new Blob([workerCode], {type: 'application/javascript'});
+        const engine = new Worker(URL.createObjectURL(blob));
+
+        engine.onmessage = function(event) {
+            if (event.data === "uciok") {
+                document.getElementById('status').innerText = "현재 턴: 백(당신)";
+                document.getElementById('feedback').innerText = "환영합니다! 새 게임을 시작합니다.";
+                document.getElementById('feedback').style.color = "blue";
+                newGame();
+            }
+        };
+        engine.postMessage("uci"); // 엔진 초기화 시작
+
+        // --- 2. 체스 엔진 통신 함수 (비동기) ---
+        function getBestMove(fen, timeLimit = 1000) {
+            return new Promise(resolve => {
+                const listener = function(event) {
+                    const msg = event.data;
+                    if (msg.startsWith("bestmove")) {
+                        engine.removeEventListener('message', listener);
+                        const move = msg.split(" ")[1]; // ex: "e2e4"
+                        resolve(move);
+                    }
+                };
+                engine.addEventListener('message', listener);
+                engine.postMessage(`position fen ${fen}`);
+                engine.postMessage(`go movetime ${timeLimit}`);
+            });
+        }
+
+        // --- 3. UI 렌더링 함수 ---
+        function renderBoard() {
+            const boardDiv = document.getElementById('board');
+            boardDiv.innerHTML = ''; // 기존 보드 지우기
+            const boardState = game.board(); // 8x8 배열 반환
+            const legalMoves = game.moves({ verbose: true });
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const squareId = files[c] + (8 - r);
+                    const squareDiv = document.createElement('div');
+                    squareDiv.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
+                    squareDiv.dataset.square = squareId;
+                    squareDiv.onclick = () => handleSquareClick(squareId);
+
+                    // 선택된 칸 하이라이트
+                    if (selectedSquare === squareId) squareDiv.classList.add('highlight');
+
+                    // 기물 그리기
+                    const piece = boardState[r][c];
+                    if (piece) {
+                        const pieceSymbol = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+                        if (pieceUrls[pieceSymbol]) {
+                            const img = document.createElement('div');
+                            img.className = 'piece';
+                            img.style.backgroundImage = `url(${pieceUrls[pieceSymbol]})`;
+                            squareDiv.appendChild(img);
+                        }
+                    }
+
+                    // 이동 가능한 칸에 점 그리기
+                    if (selectedSquare && legalMoves.some(m => m.from === selectedSquare && m.to === squareId)) {
+                        const dot = document.createElement('div');
+                        dot.className = 'dot';
+                        squareDiv.appendChild(dot);
+                    }
+
+                    boardDiv.appendChild(squareDiv);
+                }
+            }
+            drawArrow();
+        }
+
+        function drawArrow() {
+            const arrow = document.getElementById('tutor-arrow');
+            if (missedBestMove) {
+                // e.g., "e2e4" -> from: "e2", to: "e4"
+                const fromFile = files.indexOf(missedBestMove.charAt(0));
+                const fromRank = 8 - parseInt(missedBestMove.charAt(1));
+                const toFile = files.indexOf(missedBestMove.charAt(2));
+                const toRank = 8 - parseInt(missedBestMove.charAt(3));
+
+                // 격자 중앙 좌표 (0.5 추가)
+                arrow.setAttribute('x1', fromFile + 0.5);
+                arrow.setAttribute('y1', fromRank + 0.5);
+                arrow.setAttribute('x2', toFile + 0.5);
+                arrow.setAttribute('y2', toRank + 0.5);
+                arrow.style.display = 'block';
+            } else {
+                arrow.style.display = 'none';
+            }
+        }
+
+        function updateStatus() {
+            const statusEl = document.getElementById('status');
+            const feedbackEl = document.getElementById('feedback');
+
+            if (game.in_checkmate()) {
+                statusEl.innerText = "🎉 승리! 체크메이트 🎉";
+                feedbackEl.innerText = "완벽한 마무리입니다!";
+                feedbackEl.style.color = "green";
+            } else if (game.in_stalemate() || game.insufficient_material() || game.in_draw()) {
+                statusEl.innerText = "무승부! (스테일메이트/기물 부족/50수)";
+            } else if (!isCalculating) {
+                statusEl.innerText = game.turn() === 'w' ? "현재 턴: 백(당신)" : "현재 턴: 흑(컴퓨터)";
+            }
+        }
+
+        // --- 4. 게임 로직 ---
+        function newGame() {
+            const fen = practiceFens[Math.floor(Math.random() * practiceFens.length)];
+            game.load(fen);
+            selectedSquare = null;
+            missedBestMove = null;
+            isCalculating = false;
+            document.getElementById('feedback').innerText = "새 게임 시작! 첫 수를 고민해보세요.";
+            document.getElementById('feedback').style.color = "blue";
+            renderBoard();
+            updateStatus();
+        }
+
+        async function handleSquareClick(square) {
+            if (game.game_over() || game.turn() === 'b' || isCalculating) return;
+
+            const piece = game.get(square);
+
+            // 기물 선택
+            if (selectedSquare === null) {
+                if (piece && piece.color === 'w') {
+                    selectedSquare = square;
+                    missedBestMove = null;
+                    renderBoard();
+                }
+                return;
+            }
+
+            // 이동 시도
+            const moves = game.moves({ verbose: true });
+            const move = moves.find(m => m.from === selectedSquare && m.to === square);
+
+            if (move) {
+                // 합법적인 이동인 경우 -> 튜터 분석 시작
+                isCalculating = true;
+                selectedSquare = null;
+                document.getElementById('status').innerText = "당신의 수를 평가 중... (1초)";
+                renderBoard();
+
+                const currentFen = game.fen();
+                const bestMoveEngine = await getBestMove(currentFen, 1000); // 1초 연산
+                
+                // 엔진의 수(예: "e2e4")와 플레이어의 수 비교
+                const playerMoveEngineFormat = move.from + move.to;
+                
+                if (playerMoveEngineFormat === bestMoveEngine) {
+                    document.getElementById('feedback').innerText = `정확한 수입니다! (${move.san})`;
+                    document.getElementById('feedback').style.color = "green";
+                    missedBestMove = null;
+                } else {
+                    // 정답의 SAN(기보) 표기법을 얻기 위해 임시 게임 보드 사용
+                    const tempGame = new Chess(currentFen);
+                    const correctMove = tempGame.move(bestMoveEngine, { sloppy: true });
+                    document.getElementById('feedback').innerText = `아쉬운 수입니다 (${move.san}). 원래 뒀어야 할 수: ${correctMove.san}`;
+                    document.getElementById('feedback').style.color = "#e74c3c";
+                    missedBestMove = bestMoveEngine;
+                }
+
+                // 이동 적용
+                game.move(move.san);
+                isCalculating = false;
+                renderBoard();
+                updateStatus();
+
+                // 컴퓨터 턴 시작
+                setTimeout(makeComputerMove, 100);
+
+            } else {
+                // 다른 내 기물 선택
+                if (piece && piece.color === 'w') {
+                    selectedSquare = square;
+                    missedBestMove = null;
+                } else {
+                    selectedSquare = null;
+                }
+                renderBoard();
+            }
+        }
+
+        async function makeComputerMove() {
+            if (game.game_over() || game.turn() !== 'b') return;
+
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+
+            if (mode === 'engine') {
+                isCalculating = true;
+                document.getElementById('status').innerText = "컴퓨터가 방어 중... (1초)";
+                renderBoard();
+
+                const bestMove = await getBestMove(game.fen(), 1000);
+                game.move(bestMove, { sloppy: true });
+                isCalculating = false;
+            } else {
+                // 랜덤 모드
+                const moves = game.moves();
+                const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                game.move(randomMove);
+            }
+
+            renderBoard();
+            updateStatus();
+        }
+    </script>
+</body>
+</html>
