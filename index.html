@@ -9,10 +9,7 @@
         body { font-family: 'Arial', sans-serif; margin: 0; padding: 10px; background-color: #f0f0f0; display: flex; flex-direction: column; align-items: center; }
         h2 { margin: 10px 0; font-size: 20px; text-align: center; }
         #status { font-weight: bold; margin-bottom: 5px; color: #333; font-size: 18px; }
-        
-        /* 새로 추가된 수 카운터 스타일 */
         #move-counter { font-size: 14px; margin-bottom: 5px; color: #555; font-weight: bold; transition: color 0.3s; }
-        
         #feedback { font-size: 14px; margin-bottom: 15px; color: blue; text-align: center; min-height: 20px; font-weight: bold; }
         
         #board-container { position: relative; width: 100%; max-width: 500px; aspect-ratio: 1 / 1; border: 2px solid #333; }
@@ -28,22 +25,30 @@
         
         #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
-        #controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
+        /* 컨트롤 패널 기본 스타일 */
+        #controls, #replay-controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
         .mode-select { display: flex; gap: 15px; font-size: 14px; }
-        
         .btn-group { display: flex; gap: 10px; width: 100%; }
         button { padding: 12px 10px; font-size: 15px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button:active { transform: translateY(2px); }
+        
+        /* 버튼 색상 */
         .btn-new { background-color: #4CAF50; }
-        .btn-new:active { background-color: #45a049; transform: translateY(2px); }
+        .btn-new:active { background-color: #45a049; }
         .btn-demo { background-color: #8e44ad; }
-        .btn-demo:active { background-color: #732d91; transform: translateY(2px); }
+        .btn-demo:active { background-color: #732d91; }
+        
+        /* 복기 네비게이션 버튼 스타일 */
+        .btn-nav { background-color: #34495e; font-size: 18px; padding: 10px; }
+        .btn-nav:active { background-color: #2c3e50; }
+        .btn-exit { background-color: #e74c3c; margin-top: 5px;}
+        .btn-exit:active { background-color: #c0392b; }
     </style>
 </head>
 <body>
 
     <h2>비나메이트 마스터 (오답 튜터 모드)</h2>
     <div id="status">로딩 중...</div>
-    <!-- 수 카운터 표시 영역 추가 -->
     <div id="move-counter">현재 1수 진행 중 (무승부까지: 50수 남음)</div>
     <div id="feedback">체스 엔진을 준비하고 있습니다.</div>
 
@@ -59,6 +64,7 @@
         </svg>
     </div>
 
+    <!-- 기본 컨트롤 (연습 모드) -->
     <div id="controls">
         <div class="mode-select">
             <label><input type="radio" name="mode" value="random"> 랜덤 (쉬움)</label>
@@ -70,6 +76,17 @@
         </div>
     </div>
 
+    <!-- 복기 컨트롤 (AI 시범 종료 후 표시됨) -->
+    <div id="replay-controls" style="display: none;">
+        <div class="btn-group">
+            <button class="btn-nav" onclick="navDemo('first')">≪</button>
+            <button class="btn-nav" onclick="navDemo('prev')">＜</button>
+            <button class="btn-nav" onclick="navDemo('next')">＞</button>
+            <button class="btn-nav" onclick="navDemo('last')">≫</button>
+        </div>
+        <button class="btn-exit" onclick="exitDemo()">시범 종료 및 돌아가기</button>
+    </div>
+
     <script>
         const game = new Chess();
         const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -77,6 +94,11 @@
         let isCalculating = false;
         let isDemoMode = false;
         let missedBestMove = null;
+
+        // 복기 기능을 위한 변수
+        let savedFenBeforeDemo = "";
+        let demoHistory = [];
+        let currentDemoIndex = 0;
 
         const pieceUrls = {
             'K': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wk.png',
@@ -189,7 +211,6 @@
                 if (emptyCount > 0) fen += emptyCount;
                 if (r < 7) fen += "/";
             }
-            // " w - - 0 1"의 '0'이 50수 카운터의 시작점(반수 시계)을 의미합니다.
             return fen + " w - - 0 1";
         }
 
@@ -220,7 +241,8 @@
                         }
                     }
 
-                    if (selectedSquare && legalMoves.some(m => m.from === selectedSquare && m.to === squareId) && !isDemoMode) {
+                    // 데모 모드이거나 복기 중일 때는 이동 경로 점을 표시하지 않습니다.
+                    if (selectedSquare && legalMoves.some(m => m.from === selectedSquare && m.to === squareId) && !isDemoMode && document.getElementById('replay-controls').style.display === 'none') {
                         const dot = document.createElement('div');
                         dot.className = 'dot';
                         squareDiv.appendChild(dot);
@@ -233,7 +255,7 @@
 
         function drawArrow() {
             const arrow = document.getElementById('tutor-arrow');
-            if (missedBestMove && !isDemoMode) {
+            if (missedBestMove && !isDemoMode && document.getElementById('replay-controls').style.display === 'none') {
                 const fromFile = files.indexOf(missedBestMove.charAt(0));
                 const fromRank = 8 - parseInt(missedBestMove.charAt(1));
                 const toFile = files.indexOf(missedBestMove.charAt(2));
@@ -249,43 +271,36 @@
             }
         }
 
-        // --- 2. 수 카운터 업데이트 및 50수 규칙 적용 ---
         function updateStatus() {
             const statusEl = document.getElementById('status');
             const feedbackEl = document.getElementById('feedback');
             const counterEl = document.getElementById('move-counter');
 
-            // FEN 문자열에서 현재 수와 50수 카운터 추출
-            // 예: "8/8/... w - - 4 3" -> 4는 반수 시계(half-moves), 3은 현재 수(full-moves)
+            // [개선됨] FEN 데이터를 직접 읽어 턴 수와 50수 시계를 계산합니다.
             const fenParts = game.fen().split(' ');
             const halfMoves = parseInt(fenParts[4], 10);
-            
-            // 내가 진행한 턴 수 (1수 = 백과 흑이 한 번씩 움직인 것)
-            const fullMoves = Math.floor(game.history().length / 2) + 1;
-            // 50수 제한까지 남은 수 계산 (100번의 반수 = 50수)
+            const fullMoves = parseInt(fenParts[5], 10); // 실제 몇 수째인지 FEN에서 직접 가져옴
             const movesLeft = 50 - Math.floor(halfMoves / 2);
 
-            // 카운터 텍스트 및 색상 업데이트
-            if (movesLeft <= 10) {
-                counterEl.style.color = "#e74c3c"; // 10수 이하 시 붉은색 경고
-            } else {
-                counterEl.style.color = "#555";
-            }
+            if (movesLeft <= 10) counterEl.style.color = "#e74c3c";
+            else counterEl.style.color = "#555";
+            
             counterEl.innerText = `현재 ${fullMoves}수 진행 중 (무승부까지: ${movesLeft}수 남음)`;
 
             if (game.in_checkmate()) {
                 statusEl.innerText = "🎉 승리! 체크메이트 🎉";
-                feedbackEl.innerText = "완벽한 마무리입니다!";
+                feedbackEl.innerText = isDemoMode ? "AI가 체크메이트를 달성했습니다!" : "완벽한 마무리입니다!";
                 feedbackEl.style.color = "green";
                 counterEl.innerText = `총 ${fullMoves}수 만에 체크메이트 성공!`;
                 counterEl.style.color = "#2980b9";
             } else if (game.in_draw() || halfMoves >= 100) {
-                // 50수 초과 또는 스테일메이트 시
                 statusEl.innerText = "무승부! (50수 초과 / 스테일메이트)";
                 counterEl.innerText = "50수 제한에 도달하여 무승부 처리되었습니다.";
                 counterEl.style.color = "#e74c3c";
             } else if (!isCalculating && !isDemoMode) {
                 statusEl.innerText = game.turn() === 'w' ? "현재 턴: 백(당신)" : "현재 턴: 흑(컴퓨터)";
+            } else if (isDemoMode && document.getElementById('replay-controls').style.display === 'block') {
+                statusEl.innerText = "AI 기보 복기 중";
             }
         }
 
@@ -306,7 +321,8 @@
         }
 
         async function handleSquareClick(square) {
-            if (game.game_over() || game.turn() === 'b' || isCalculating || isDemoMode) return;
+            // 데모 중이거나 복기 중일 때 터치 방지
+            if (game.game_over() || game.turn() === 'b' || isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
 
             const piece = game.get(square);
 
@@ -350,7 +366,6 @@
 
                 renderBoard();
                 updateStatus();
-
                 setTimeout(makeComputerMove, 100);
 
             } else {
@@ -371,7 +386,6 @@
 
             if (mode === 'engine') {
                 document.getElementById('status').innerText = "컴퓨터가 방어 중... (1초)";
-                
                 const bestMove = await getBestMove(game.fen(), 1000);
                 game.move(bestMove, { sloppy: true });
             } else {
@@ -385,6 +399,7 @@
             updateStatus();
         }
 
+        // --- 3. AI 시범 및 복기 기능 ---
         async function runAIDemo() {
             if (isCalculating || isDemoMode || game.game_over()) return;
             
@@ -392,10 +407,20 @@
             selectedSquare = null;
             missedBestMove = null;
             
-            const savedFen = game.fen();
+            // 돌아갈 기존 상태 저장
+            savedFenBeforeDemo = game.fen();
+            
+            // 시범 기보 배열 초기화 및 첫 상태 저장
+            demoHistory = [];
+            demoHistory.push(game.fen());
             
             document.getElementById('feedback').innerText = "AI가 체크메이트 시범을 보여줍니다!";
             document.getElementById('feedback').style.color = "#8e44ad";
+            
+            // 버튼들 비활성화 처리
+            document.querySelector('.btn-new').disabled = true;
+            document.querySelector('.btn-demo').disabled = true;
+
             renderBoard();
 
             while (isDemoMode && !game.game_over()) {
@@ -404,26 +429,57 @@
                 
                 const bestMove = await getBestMove(game.fen(), 300);
                 game.move(bestMove, { sloppy: true });
+                
+                // 엔진이 둔 수를 기보 배열에 저장
+                demoHistory.push(game.fen());
+                
                 renderBoard();
-                updateStatus(); // 시범 중에도 수 카운터 업데이트
+                updateStatus(); 
                 
                 await new Promise(resolve => setTimeout(resolve, 400));
             }
 
-            if (game.in_checkmate()) {
-                document.getElementById('status').innerText = "🎉 AI가 체크메이트를 달성했습니다!";
-                document.getElementById('feedback').innerText = "3초 후 원래 상태로 돌아갑니다...";
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            } else {
-                // 50수에 도달하여 무승부가 되었을 경우
-                document.getElementById('status').innerText = "무승부 발생! (50수 초과)";
-                await new Promise(resolve => setTimeout(resolve, 2000));
+            if (game.in_checkmate() || game.in_draw()) {
+                // 시범 종료 후 복기 컨트롤 패널 표시
+                document.getElementById('controls').style.display = 'none';
+                document.getElementById('replay-controls').style.display = 'flex';
+                
+                document.getElementById('feedback').innerText = "시범이 종료되었습니다. 아래 버튼으로 기보를 복기해보세요.";
+                document.getElementById('feedback').style.color = "#e67e22";
+                
+                // 복기 인덱스를 가장 마지막 수(체크메이트 상황)로 설정
+                currentDemoIndex = demoHistory.length - 1;
             }
+        }
 
-            game.load(savedFen);
+        // 복기 네비게이션 함수
+        function navDemo(action) {
+            if (action === 'first') currentDemoIndex = 0;
+            else if (action === 'prev' && currentDemoIndex > 0) currentDemoIndex--;
+            else if (action === 'next' && currentDemoIndex < demoHistory.length - 1) currentDemoIndex++;
+            else if (action === 'last') currentDemoIndex = demoHistory.length - 1;
+
+            // 선택된 인덱스의 기보(FEN)를 불러와 화면에 반영
+            game.load(demoHistory[currentDemoIndex]);
+            renderBoard();
+            updateStatus();
+            
+            document.getElementById('feedback').innerText = `기보 탐색 중: ${currentDemoIndex} / ${demoHistory.length - 1} 수`;
+        }
+
+        // 시범 완전히 종료 및 내 게임으로 복귀
+        function exitDemo() {
+            // 버튼 상태 원상복구
+            document.getElementById('replay-controls').style.display = 'none';
+            document.getElementById('controls').style.display = 'flex';
+            document.querySelector('.btn-new').disabled = false;
+            document.querySelector('.btn-demo').disabled = false;
+
+            // 내가 두고 있던 원래 상황으로 시간 되돌리기
+            game.load(savedFenBeforeDemo);
             isDemoMode = false;
             
-            document.getElementById('feedback').innerText = "시범 종료! 계속해서 연습해보세요.";
+            document.getElementById('feedback').innerText = "시범 종료! 여기서부터 다시 고민해보세요.";
             document.getElementById('feedback').style.color = "blue";
             
             renderBoard();
