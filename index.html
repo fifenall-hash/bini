@@ -25,20 +25,17 @@
         
         #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
-        /* 컨트롤 패널 기본 스타일 */
         #controls, #replay-controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
         .mode-select { display: flex; gap: 15px; font-size: 14px; }
         .btn-group { display: flex; gap: 10px; width: 100%; }
         button { padding: 12px 10px; font-size: 15px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         button:active { transform: translateY(2px); }
         
-        /* 버튼 색상 */
         .btn-new { background-color: #4CAF50; }
         .btn-new:active { background-color: #45a049; }
         .btn-demo { background-color: #8e44ad; }
         .btn-demo:active { background-color: #732d91; }
         
-        /* 복기 네비게이션 버튼 스타일 */
         .btn-nav { background-color: #34495e; font-size: 18px; padding: 10px; }
         .btn-nav:active { background-color: #2c3e50; }
         .btn-exit { background-color: #e74c3c; margin-top: 5px;}
@@ -64,7 +61,6 @@
         </svg>
     </div>
 
-    <!-- 기본 컨트롤 (연습 모드) -->
     <div id="controls">
         <div class="mode-select">
             <label><input type="radio" name="mode" value="random"> 랜덤 (쉬움)</label>
@@ -76,7 +72,6 @@
         </div>
     </div>
 
-    <!-- 복기 컨트롤 (AI 시범 종료 후 표시됨) -->
     <div id="replay-controls" style="display: none;">
         <div class="btn-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
@@ -95,7 +90,6 @@
         let isDemoMode = false;
         let missedBestMove = null;
 
-        // 복기 기능을 위한 변수
         let savedFenBeforeDemo = "";
         let demoHistory = [];
         let currentDemoIndex = 0;
@@ -106,6 +100,24 @@
             'N': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wn.png',
             'k': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bk.png'
         };
+
+        // --- 사운드 객체 초기화 ---
+        const moveSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3');
+        const captureSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3');
+
+        // 사운드 재생 헬퍼 함수
+        function playSound(moveObj) {
+            if (!moveObj) return;
+            
+            // 기물을 잡은 경우와 일반 이동인 경우 소리를 다르게 재생합니다.
+            if (moveObj.captured) {
+                captureSound.currentTime = 0; // 연속 재생 시 끊기지 않도록 시간을 0으로 초기화
+                captureSound.play().catch(e => console.log("사운드 재생 에러:", e));
+            } else {
+                moveSound.currentTime = 0;
+                moveSound.play().catch(e => console.log("사운드 재생 에러:", e));
+            }
+        }
 
         const workerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');`;
         const blob = new Blob([workerCode], {type: 'application/javascript'});
@@ -241,7 +253,6 @@
                         }
                     }
 
-                    // 데모 모드이거나 복기 중일 때는 이동 경로 점을 표시하지 않습니다.
                     if (selectedSquare && legalMoves.some(m => m.from === selectedSquare && m.to === squareId) && !isDemoMode && document.getElementById('replay-controls').style.display === 'none') {
                         const dot = document.createElement('div');
                         dot.className = 'dot';
@@ -276,10 +287,9 @@
             const feedbackEl = document.getElementById('feedback');
             const counterEl = document.getElementById('move-counter');
 
-            // [개선됨] FEN 데이터를 직접 읽어 턴 수와 50수 시계를 계산합니다.
             const fenParts = game.fen().split(' ');
             const halfMoves = parseInt(fenParts[4], 10);
-            const fullMoves = parseInt(fenParts[5], 10); // 실제 몇 수째인지 FEN에서 직접 가져옴
+            const fullMoves = parseInt(fenParts[5], 10); 
             const movesLeft = 50 - Math.floor(halfMoves / 2);
 
             if (movesLeft <= 10) counterEl.style.color = "#e74c3c";
@@ -321,7 +331,6 @@
         }
 
         async function handleSquareClick(square) {
-            // 데모 중이거나 복기 중일 때 터치 방지
             if (game.game_over() || game.turn() === 'b' || isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
 
             const piece = game.get(square);
@@ -344,7 +353,9 @@
                 
                 const previousFen = game.fen();
                 
-                game.move(move.san);
+                // 플레이어가 둔 수 적용 및 사운드 재생
+                const moveObj = game.move(move.san);
+                playSound(moveObj);
                 renderBoard();
                 
                 document.getElementById('status').innerText = "당신의 수를 평가 중... (1초)";
@@ -383,23 +394,26 @@
             if (game.game_over() || game.turn() !== 'b' || isDemoMode) return;
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
+            let moveObj = null;
 
             if (mode === 'engine') {
                 document.getElementById('status').innerText = "컴퓨터가 방어 중... (1초)";
                 const bestMove = await getBestMove(game.fen(), 1000);
-                game.move(bestMove, { sloppy: true });
+                moveObj = game.move(bestMove, { sloppy: true });
             } else {
                 const moves = game.moves();
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
-                game.move(randomMove);
+                moveObj = game.move(randomMove);
             }
+            
+            // 컴퓨터가 이동한 후 사운드 재생
+            playSound(moveObj);
 
             isCalculating = false;
             renderBoard();
             updateStatus();
         }
 
-        // --- 3. AI 시범 및 복기 기능 ---
         async function runAIDemo() {
             if (isCalculating || isDemoMode || game.game_over()) return;
             
@@ -407,17 +421,14 @@
             selectedSquare = null;
             missedBestMove = null;
             
-            // 돌아갈 기존 상태 저장
             savedFenBeforeDemo = game.fen();
             
-            // 시범 기보 배열 초기화 및 첫 상태 저장
             demoHistory = [];
             demoHistory.push(game.fen());
             
             document.getElementById('feedback').innerText = "AI가 체크메이트 시범을 보여줍니다!";
             document.getElementById('feedback').style.color = "#8e44ad";
             
-            // 버튼들 비활성화 처리
             document.querySelector('.btn-new').disabled = true;
             document.querySelector('.btn-demo').disabled = true;
 
@@ -428,9 +439,11 @@
                 document.getElementById('status').innerText = `AI 시범 진행 중... (${turnStr} 턴)`;
                 
                 const bestMove = await getBestMove(game.fen(), 300);
-                game.move(bestMove, { sloppy: true });
+                const moveObj = game.move(bestMove, { sloppy: true });
                 
-                // 엔진이 둔 수를 기보 배열에 저장
+                // AI 시범 중에도 이동 시 사운드 재생
+                playSound(moveObj);
+                
                 demoHistory.push(game.fen());
                 
                 renderBoard();
@@ -440,26 +453,30 @@
             }
 
             if (game.in_checkmate() || game.in_draw()) {
-                // 시범 종료 후 복기 컨트롤 패널 표시
                 document.getElementById('controls').style.display = 'none';
                 document.getElementById('replay-controls').style.display = 'flex';
                 
                 document.getElementById('feedback').innerText = "시범이 종료되었습니다. 아래 버튼으로 기보를 복기해보세요.";
                 document.getElementById('feedback').style.color = "#e67e22";
                 
-                // 복기 인덱스를 가장 마지막 수(체크메이트 상황)로 설정
                 currentDemoIndex = demoHistory.length - 1;
             }
         }
 
-        // 복기 네비게이션 함수
         function navDemo(action) {
+            let previousIndex = currentDemoIndex;
+
             if (action === 'first') currentDemoIndex = 0;
             else if (action === 'prev' && currentDemoIndex > 0) currentDemoIndex--;
             else if (action === 'next' && currentDemoIndex < demoHistory.length - 1) currentDemoIndex++;
             else if (action === 'last') currentDemoIndex = demoHistory.length - 1;
 
-            // 선택된 인덱스의 기보(FEN)를 불러와 화면에 반영
+            // 수가 이동했을 때만 틱 소리(일반 이동음)를 짧게 재생
+            if (previousIndex !== currentDemoIndex) {
+                moveSound.currentTime = 0;
+                moveSound.play().catch(e => {});
+            }
+
             game.load(demoHistory[currentDemoIndex]);
             renderBoard();
             updateStatus();
@@ -467,15 +484,12 @@
             document.getElementById('feedback').innerText = `기보 탐색 중: ${currentDemoIndex} / ${demoHistory.length - 1} 수`;
         }
 
-        // 시범 완전히 종료 및 내 게임으로 복귀
         function exitDemo() {
-            // 버튼 상태 원상복구
             document.getElementById('replay-controls').style.display = 'none';
             document.getElementById('controls').style.display = 'flex';
             document.querySelector('.btn-new').disabled = false;
             document.querySelector('.btn-demo').disabled = false;
 
-            // 내가 두고 있던 원래 상황으로 시간 되돌리기
             game.load(savedFenBeforeDemo);
             isDemoMode = false;
             
