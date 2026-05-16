@@ -27,18 +27,21 @@
         
         #controls, #replay-controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
         .mode-select { display: flex; gap: 15px; font-size: 14px; }
-        .btn-group { display: flex; gap: 10px; width: 100%; }
-        button { padding: 12px 10px; font-size: 15px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .btn-group { display: flex; gap: 10px; width: 100%; flex-wrap: wrap; justify-content: center;}
+        
+        button { padding: 10px 5px; font-size: 14px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 30%; }
         button:active { transform: translateY(2px); }
         
         .btn-new { background-color: #4CAF50; }
         .btn-new:active { background-color: #45a049; }
+        .btn-new-center { background-color: #2980b9; }
+        .btn-new-center:active { background-color: #2471a3; }
         .btn-demo { background-color: #8e44ad; }
         .btn-demo:active { background-color: #732d91; }
         
         .btn-nav { background-color: #34495e; font-size: 18px; padding: 10px; }
         .btn-nav:active { background-color: #2c3e50; }
-        .btn-exit { background-color: #e74c3c; margin-top: 5px;}
+        .btn-exit { background-color: #e74c3c; margin-top: 5px; width: 100%;}
         .btn-exit:active { background-color: #c0392b; }
     </style>
 </head>
@@ -61,17 +64,20 @@
         </svg>
     </div>
 
+    <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
             <label><input type="radio" name="mode" value="random"> 랜덤 (쉬움)</label>
             <label><input type="radio" name="mode" value="engine" checked> 엔진 (어려움)</label>
         </div>
         <div class="btn-group">
-            <button class="btn-new" onclick="newGame()">무작위 새 연습</button>
+            <button class="btn-new" onclick="newGame('random')">무작위 새 연습</button>
+            <button class="btn-new-center" onclick="newGame('center')">중앙 새 연습</button>
             <button class="btn-demo" onclick="runAIDemo()">AI 시범 보기</button>
         </div>
     </div>
 
+    <!-- 복기 컨트롤 영역 -->
     <div id="replay-controls" style="display: none;">
         <div class="btn-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
@@ -101,21 +107,17 @@
             'k': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bk.png'
         };
 
-        // --- 사운드 객체 초기화 ---
         const moveSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3');
         const captureSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3');
 
-        // 사운드 재생 헬퍼 함수
         function playSound(moveObj) {
             if (!moveObj) return;
-            
-            // 기물을 잡은 경우와 일반 이동인 경우 소리를 다르게 재생합니다.
             if (moveObj.captured) {
-                captureSound.currentTime = 0; // 연속 재생 시 끊기지 않도록 시간을 0으로 초기화
-                captureSound.play().catch(e => console.log("사운드 재생 에러:", e));
+                captureSound.currentTime = 0;
+                captureSound.play().catch(e => {});
             } else {
                 moveSound.currentTime = 0;
-                moveSound.play().catch(e => console.log("사운드 재생 에러:", e));
+                moveSound.play().catch(e => {});
             }
         }
 
@@ -124,11 +126,11 @@
         const engine = new Worker(URL.createObjectURL(blob));
 
         engine.onmessage = function(event) {
-            if (event.data === "uciok") newGame();
+            if (event.data === "uciok") newGame('random');
         };
         engine.postMessage("uci");
 
-        function getBestMove(fen, timeLimit = 1000) {
+        function getBestMove(fen, timeLimit = 1500) {
             return new Promise(resolve => {
                 const listener = function(event) {
                     const msg = event.data;
@@ -143,7 +145,86 @@
             });
         }
 
-        function generateRandomValidFEN() {
+        // --- 공통: 배열 객체를 FEN 문자열로 변환하는 헬퍼 함수 ---
+        function assembleFen(wk, wb, wn, bk) {
+            let board = Array.from({ length: 8 }, () => Array(8).fill(null));
+            board[wk.r][wk.c] = 'K';
+            board[wb.r][wb.c] = 'B';
+            board[wn.r][wn.c] = 'N';
+            board[bk.r][bk.c] = 'k';
+
+            let fen = "";
+            for (let r = 0; r < 8; r++) {
+                let emptyCount = 0;
+                for (let c = 0; c < 8; c++) {
+                    if (board[r][c] === null) emptyCount++;
+                    else {
+                        if (emptyCount > 0) fen += emptyCount;
+                        fen += board[r][c];
+                        emptyCount = 0;
+                    }
+                }
+                if (emptyCount > 0) fen += emptyCount;
+                if (r < 7) fen += "/";
+            }
+            return fen + " w - - 0 1";
+        }
+
+        // --- 배치 전략 1: 완전 무작위 64칸 배치 ---
+        function generateRandomValidFEN_Anywhere() {
+            while (true) {
+                // 64칸 중 무작위로 겹치지 않는 3칸 추출
+                let squares = [];
+                while (squares.length < 3) {
+                    let randomSq = Math.floor(Math.random() * 64);
+                    if (!squares.includes(randomSq)) squares.push(randomSq);
+                }
+                const wk = { r: Math.floor(squares[0] / 8), c: squares[0] % 8 };
+                const wb = { r: Math.floor(squares[1] / 8), c: squares[1] % 8 };
+                const wn = { r: Math.floor(squares[2] / 8), c: squares[2] % 8 };
+
+                let safeSquares = [];
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if ((r === wk.r && c === wk.c) || (r === wb.r && c === wb.c) || (r === wn.r && c === wn.c)) continue;
+
+                        let isSafe = true;
+                        if (Math.abs(wk.r - r) <= 1 && Math.abs(wk.c - c) <= 1) isSafe = false;
+
+                        if (isSafe) {
+                            let ndx = Math.abs(wn.r - r), ndy = Math.abs(wn.c - c);
+                            if ((ndx === 1 && ndy === 2) || (ndx === 2 && ndy === 1)) isSafe = false;
+                        }
+
+                        if (isSafe) {
+                            let bdx = Math.abs(wb.r - r), bdy = Math.abs(wb.c - c);
+                            if (bdx === bdy) {
+                                let isBlocked = false;
+                                let stepR = r > wb.r ? 1 : -1, stepC = c > wb.c ? 1 : -1;
+                                let currR = wb.r + stepR, currC = wb.c + stepC;
+                                while (currR !== r && currC !== c) {
+                                    if ((currR === wk.r && currC === wk.c) || (currR === wn.r && currC === wn.c)) {
+                                        isBlocked = true; break;
+                                    }
+                                    currR += stepR; currC += stepC;
+                                }
+                                if (!isBlocked) isSafe = false;
+                            }
+                        }
+                        if (isSafe) safeSquares.push({r: r, c: c});
+                    }
+                }
+
+                if (safeSquares.length > 0) {
+                    const randomSafeIdx = Math.floor(Math.random() * safeSquares.length);
+                    const bk = safeSquares[randomSafeIdx];
+                    return assembleFen(wk, wb, wn, bk);
+                }
+            }
+        }
+
+        // --- 배치 전략 2: 중앙 집중형 4칸 배치 ---
+        function generateRandomValidFEN_Center() {
             const centerSquares = [
                 {r: 3, c: 3}, {r: 3, c: 4},
                 {r: 4, c: 3}, {r: 4, c: 4}
@@ -166,30 +247,21 @@
             for (let r = 0; r < 8; r++) {
                 for (let c = 0; c < 8; c++) {
                     if ((r === wk.r && c === wk.c) || (r === wb.r && c === wb.c) || (r === wn.r && c === wn.c)) continue;
-
                     let isSafe = true;
                     if (Math.abs(wk.r - r) <= 1 && Math.abs(wk.c - c) <= 1) isSafe = false;
-
                     if (isSafe) {
-                        let ndx = Math.abs(wn.r - r);
-                        let ndy = Math.abs(wn.c - c);
+                        let ndx = Math.abs(wn.r - r), ndy = Math.abs(wn.c - c);
                         if ((ndx === 1 && ndy === 2) || (ndx === 2 && ndy === 1)) isSafe = false;
                     }
-
                     if (isSafe) {
-                        let bdx = Math.abs(wb.r - r);
-                        let bdy = Math.abs(wb.c - c);
+                        let bdx = Math.abs(wb.r - r), bdy = Math.abs(wb.c - c);
                         if (bdx === bdy) {
                             let isBlocked = false;
-                            let stepR = r > wb.r ? 1 : -1;
-                            let stepC = c > wb.c ? 1 : -1;
-                            let currR = wb.r + stepR;
-                            let currC = wb.c + stepC;
-
+                            let stepR = r > wb.r ? 1 : -1, stepC = c > wb.c ? 1 : -1;
+                            let currR = wb.r + stepR, currC = wb.c + stepC;
                             while (currR !== r && currC !== c) {
                                 if ((currR === wk.r && currC === wk.c) || (currR === wn.r && currC === wn.c)) {
-                                    isBlocked = true;
-                                    break;
+                                    isBlocked = true; break;
                                 }
                                 currR += stepR; currC += stepC;
                             }
@@ -199,31 +271,8 @@
                     if (isSafe) safeSquares.push({r: r, c: c});
                 }
             }
-
-            const randomSafeIdx = Math.floor(Math.random() * safeSquares.length);
-            const bk = safeSquares[randomSafeIdx];
-
-            let board = Array.from({ length: 8 }, () => Array(8).fill(null));
-            board[wk.r][wk.c] = 'K';
-            board[wb.r][wb.c] = 'B';
-            board[wn.r][wn.c] = 'N';
-            board[bk.r][bk.c] = 'k';
-
-            let fen = "";
-            for (let r = 0; r < 8; r++) {
-                let emptyCount = 0;
-                for (let c = 0; c < 8; c++) {
-                    if (board[r][c] === null) emptyCount++;
-                    else {
-                        if (emptyCount > 0) fen += emptyCount;
-                        fen += board[r][c];
-                        emptyCount = 0;
-                    }
-                }
-                if (emptyCount > 0) fen += emptyCount;
-                if (r < 7) fen += "/";
-            }
-            return fen + " w - - 0 1";
+            const bk = safeSquares[Math.floor(Math.random() * safeSquares.length)];
+            return assembleFen(wk, wb, wn, bk);
         }
 
         function renderBoard() {
@@ -314,16 +363,29 @@
             }
         }
 
-        function newGame() {
-            if (isDemoMode) return; 
-            const fen = generateRandomValidFEN();
+        // --- 시범 종료 및 초기화 헬퍼 함수 ---
+        function stopDemoAndReset() {
+            isDemoMode = false;
+            document.getElementById('replay-controls').style.display = 'none';
+            document.getElementById('controls').style.display = 'flex';
+            document.querySelector('.btn-new').disabled = false;
+            document.querySelector('.btn-new-center').disabled = false;
+            document.querySelector('.btn-demo').disabled = false;
+        }
+
+        function newGame(type) {
+            // 버튼 클릭 시 시범 모드가 작동 중이라면 즉각적으로 중단시킵니다.
+            stopDemoAndReset();
+
+            const fen = type === 'center' ? generateRandomValidFEN_Center() : generateRandomValidFEN_Anywhere();
             game.load(fen);
             
             selectedSquare = null;
             missedBestMove = null;
             isCalculating = false;
             
-            document.getElementById('feedback').innerText = "정중앙 배치 완료! 비숍의 길이 열려있습니다.";
+            const message = type === 'center' ? "정중앙 배치 완료! 비숍 길이 열려있습니다." : "완전 무작위 배치 완료! 첫 수를 둬보세요.";
+            document.getElementById('feedback').innerText = message;
             document.getElementById('feedback').style.color = "blue";
             
             renderBoard();
@@ -353,14 +415,14 @@
                 
                 const previousFen = game.fen();
                 
-                // 플레이어가 둔 수 적용 및 사운드 재생
                 const moveObj = game.move(move.san);
                 playSound(moveObj);
                 renderBoard();
                 
-                document.getElementById('status').innerText = "당신의 수를 평가 중... (1초)";
+                // 시간 연장 반영 1.5초(1500ms)
+                document.getElementById('status').innerText = "당신의 수를 평가 중... (1.5초)";
 
-                const bestMoveEngine = await getBestMove(previousFen, 1000); 
+                const bestMoveEngine = await getBestMove(previousFen, 1500); 
                 const playerMoveEngineFormat = move.from + move.to;
                 
                 if (playerMoveEngineFormat === bestMoveEngine) {
@@ -397,8 +459,9 @@
             let moveObj = null;
 
             if (mode === 'engine') {
-                document.getElementById('status').innerText = "컴퓨터가 방어 중... (1초)";
-                const bestMove = await getBestMove(game.fen(), 1000);
+                document.getElementById('status').innerText = "컴퓨터가 방어 중... (1.5초)";
+                // 컴퓨터의 연산 시간도 1.5초로 연장
+                const bestMove = await getBestMove(game.fen(), 1500);
                 moveObj = game.move(bestMove, { sloppy: true });
             } else {
                 const moves = game.moves();
@@ -406,7 +469,6 @@
                 moveObj = game.move(randomMove);
             }
             
-            // 컴퓨터가 이동한 후 사운드 재생
             playSound(moveObj);
 
             isCalculating = false;
@@ -429,19 +491,20 @@
             document.getElementById('feedback').innerText = "AI가 체크메이트 시범을 보여줍니다!";
             document.getElementById('feedback').style.color = "#8e44ad";
             
-            document.querySelector('.btn-new').disabled = true;
-            document.querySelector('.btn-demo').disabled = true;
-
+            // 시범 중 버튼을 누르면 중단될 수 있도록 버튼을 비활성화하지 않습니다.
             renderBoard();
 
             while (isDemoMode && !game.game_over()) {
                 const turnStr = game.turn() === 'w' ? '백' : '흑';
                 document.getElementById('status').innerText = `AI 시범 진행 중... (${turnStr} 턴)`;
                 
+                // 시범 모드는 답답하지 않도록 기존 속도(300ms) 유지
                 const bestMove = await getBestMove(game.fen(), 300);
-                const moveObj = game.move(bestMove, { sloppy: true });
                 
-                // AI 시범 중에도 이동 시 사운드 재생
+                // 연산 중 사용자가 '새 연습' 버튼을 눌렀다면 즉각 종료
+                if (!isDemoMode) return;
+
+                const moveObj = game.move(bestMove, { sloppy: true });
                 playSound(moveObj);
                 
                 demoHistory.push(game.fen());
@@ -449,10 +512,15 @@
                 renderBoard();
                 updateStatus(); 
                 
+                // 화면 갱신 대기 시간
                 await new Promise(resolve => setTimeout(resolve, 400));
+                
+                // 대기 시간 중 사용자가 눌렀다면 종료
+                if (!isDemoMode) return;
             }
 
-            if (game.in_checkmate() || game.in_draw()) {
+            // 시범이 끝까지 완료된 경우에만 실행
+            if (isDemoMode && (game.in_checkmate() || game.in_draw())) {
                 document.getElementById('controls').style.display = 'none';
                 document.getElementById('replay-controls').style.display = 'flex';
                 
@@ -471,7 +539,6 @@
             else if (action === 'next' && currentDemoIndex < demoHistory.length - 1) currentDemoIndex++;
             else if (action === 'last') currentDemoIndex = demoHistory.length - 1;
 
-            // 수가 이동했을 때만 틱 소리(일반 이동음)를 짧게 재생
             if (previousIndex !== currentDemoIndex) {
                 moveSound.currentTime = 0;
                 moveSound.play().catch(e => {});
@@ -485,13 +552,8 @@
         }
 
         function exitDemo() {
-            document.getElementById('replay-controls').style.display = 'none';
-            document.getElementById('controls').style.display = 'flex';
-            document.querySelector('.btn-new').disabled = false;
-            document.querySelector('.btn-demo').disabled = false;
-
+            stopDemoAndReset();
             game.load(savedFenBeforeDemo);
-            isDemoMode = false;
             
             document.getElementById('feedback').innerText = "시범 종료! 여기서부터 다시 고민해보세요.";
             document.getElementById('feedback').style.color = "blue";
