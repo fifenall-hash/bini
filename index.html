@@ -27,8 +27,14 @@
         
         #controls, #replay-controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
         .mode-select { display: flex; gap: 15px; font-size: 14px; }
+        
+        /* 기본 버튼 그룹 (연습, 시범 버튼 등) */
         .btn-group { display: flex; gap: 10px; width: 100%; flex-wrap: wrap; justify-content: center;}
         
+        /* 복기 네비게이션 전용 그룹 (새로 추가됨) */
+        .nav-group { display: flex; gap: 5px; width: 100%; flex-wrap: nowrap; justify-content: space-between; }
+        
+        /* 공통 버튼 스타일 */
         button { padding: 10px 5px; font-size: 14px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 30%; }
         button:active { transform: translateY(2px); }
         
@@ -39,9 +45,11 @@
         .btn-demo { background-color: #8e44ad; }
         .btn-demo:active { background-color: #732d91; }
         
-        .btn-nav { background-color: #34495e; font-size: 18px; padding: 10px; }
+        /* 네비게이션 버튼 전용 스타일 */
+        .btn-nav { background-color: #34495e; font-size: 18px; padding: 10px; min-width: 0; } /* min-width를 0으로 하여 한 줄에 맞게 조절 */
         .btn-nav:active { background-color: #2c3e50; }
-        .btn-exit { background-color: #e74c3c; margin-top: 5px; width: 100%;}
+        
+        .btn-exit { background-color: #e74c3c; margin-top: 5px; width: 100%; min-width: 100%;}
         .btn-exit:active { background-color: #c0392b; }
     </style>
 </head>
@@ -79,7 +87,8 @@
 
     <!-- 복기 컨트롤 영역 -->
     <div id="replay-controls" style="display: none;">
-        <div class="btn-group">
+        <!-- btn-group 대신 nav-group 사용 -->
+        <div class="nav-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
             <button class="btn-nav" onclick="navDemo('prev')">＜</button>
             <button class="btn-nav" onclick="navDemo('next')">＞</button>
@@ -145,7 +154,6 @@
             });
         }
 
-        // --- 공통: 배열 객체를 FEN 문자열로 변환하는 헬퍼 함수 ---
         function assembleFen(wk, wb, wn, bk) {
             let board = Array.from({ length: 8 }, () => Array(8).fill(null));
             board[wk.r][wk.c] = 'K';
@@ -170,10 +178,8 @@
             return fen + " w - - 0 1";
         }
 
-        // --- 배치 전략 1: 완전 무작위 64칸 배치 ---
         function generateRandomValidFEN_Anywhere() {
             while (true) {
-                // 64칸 중 무작위로 겹치지 않는 3칸 추출
                 let squares = [];
                 while (squares.length < 3) {
                     let randomSq = Math.floor(Math.random() * 64);
@@ -223,7 +229,6 @@
             }
         }
 
-        // --- 배치 전략 2: 중앙 집중형 4칸 배치 ---
         function generateRandomValidFEN_Center() {
             const centerSquares = [
                 {r: 3, c: 3}, {r: 3, c: 4},
@@ -363,7 +368,6 @@
             }
         }
 
-        // --- 시범 종료 및 초기화 헬퍼 함수 ---
         function stopDemoAndReset() {
             isDemoMode = false;
             document.getElementById('replay-controls').style.display = 'none';
@@ -374,7 +378,6 @@
         }
 
         function newGame(type) {
-            // 버튼 클릭 시 시범 모드가 작동 중이라면 즉각적으로 중단시킵니다.
             stopDemoAndReset();
 
             const fen = type === 'center' ? generateRandomValidFEN_Center() : generateRandomValidFEN_Anywhere();
@@ -419,7 +422,6 @@
                 playSound(moveObj);
                 renderBoard();
                 
-                // 시간 연장 반영 1.5초(1500ms)
                 document.getElementById('status').innerText = "당신의 수를 평가 중... (1.5초)";
 
                 const bestMoveEngine = await getBestMove(previousFen, 1500); 
@@ -460,7 +462,6 @@
 
             if (mode === 'engine') {
                 document.getElementById('status').innerText = "컴퓨터가 방어 중... (1.5초)";
-                // 컴퓨터의 연산 시간도 1.5초로 연장
                 const bestMove = await getBestMove(game.fen(), 1500);
                 moveObj = game.move(bestMove, { sloppy: true });
             } else {
@@ -491,17 +492,14 @@
             document.getElementById('feedback').innerText = "AI가 체크메이트 시범을 보여줍니다!";
             document.getElementById('feedback').style.color = "#8e44ad";
             
-            // 시범 중 버튼을 누르면 중단될 수 있도록 버튼을 비활성화하지 않습니다.
             renderBoard();
 
             while (isDemoMode && !game.game_over()) {
                 const turnStr = game.turn() === 'w' ? '백' : '흑';
                 document.getElementById('status').innerText = `AI 시범 진행 중... (${turnStr} 턴)`;
                 
-                // 시범 모드는 답답하지 않도록 기존 속도(300ms) 유지
                 const bestMove = await getBestMove(game.fen(), 300);
                 
-                // 연산 중 사용자가 '새 연습' 버튼을 눌렀다면 즉각 종료
                 if (!isDemoMode) return;
 
                 const moveObj = game.move(bestMove, { sloppy: true });
@@ -512,14 +510,11 @@
                 renderBoard();
                 updateStatus(); 
                 
-                // 화면 갱신 대기 시간
                 await new Promise(resolve => setTimeout(resolve, 400));
                 
-                // 대기 시간 중 사용자가 눌렀다면 종료
                 if (!isDemoMode) return;
             }
 
-            // 시범이 끝까지 완료된 경우에만 실행
             if (isDemoMode && (game.in_checkmate() || game.in_draw())) {
                 document.getElementById('controls').style.display = 'none';
                 document.getElementById('replay-controls').style.display = 'flex';
