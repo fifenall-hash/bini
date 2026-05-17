@@ -34,7 +34,6 @@
         button { padding: 10px 5px; font-size: 14px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 30%; transition: opacity 0.2s; }
         button:active:not(:disabled) { transform: translateY(2px); }
         
-        /* 버튼 비활성화 상태 스타일 */
         button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; transform: none; }
         
         .btn-new { background-color: #4CAF50; }
@@ -73,8 +72,10 @@
     <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
-            <label><input type="radio" name="mode" value="random"> 랜덤 (쉬움)</label>
-            <label><input type="radio" name="mode" value="engine" checked> 엔진 (어려움)</label>
+            <!-- 텍스트 수정 및 유저 모드 추가 -->
+            <label><input type="radio" name="mode" value="random"> 랜덤</label>
+            <label><input type="radio" name="mode" value="engine" checked> 엔진</label>
+            <label><input type="radio" name="mode" value="user"> 유저</label>
         </div>
         <div class="btn-group">
             <button class="btn-new" onclick="newGame('random')">무작위 새 연습</button>
@@ -359,19 +360,18 @@
                 counterEl.innerText = "50수 제한에 도달하여 무승부 처리되었습니다.";
                 counterEl.style.color = "#e74c3c";
             } else if (!isCalculating && !isDemoMode) {
-                statusEl.innerText = game.turn() === 'w' ? "현재 턴: 백(당신)" : "현재 턴: 흑(컴퓨터)";
+                // 유저 모드를 고려한 현재 턴 표시
+                statusEl.innerText = game.turn() === 'w' ? "현재 턴: 백" : "현재 턴: 흑";
             } else if (isDemoMode && document.getElementById('replay-controls').style.display === 'block') {
                 statusEl.innerText = "AI 기보 복기 중";
             }
         }
 
-        // --- 공통: UI 복구 및 초기화 헬퍼 함수 ---
         function stopDemoAndReset() {
             isDemoMode = false;
             document.getElementById('replay-controls').style.display = 'none';
             document.getElementById('controls').style.display = 'flex';
             
-            // 모든 버튼의 비활성화 상태를 해제하여 정상적인 상호작용 복구
             document.querySelectorAll('button').forEach(btn => btn.disabled = false);
         }
 
@@ -394,12 +394,18 @@
         }
 
         async function handleSquareClick(square) {
-            if (game.game_over() || game.turn() === 'b' || isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
+            if (game.game_over() || isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
+
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            
+            // 흑의 턴일 때, '유저' 모드가 아니라면 조작을 막습니다.
+            if (game.turn() === 'b' && mode !== 'user') return;
 
             const piece = game.get(square);
 
             if (selectedSquare === null) {
-                if (piece && piece.color === 'w') {
+                // 백이든 흑이든 현재 턴에 맞는 기물만 선택되게 수정
+                if (piece && piece.color === game.turn()) {
                     selectedSquare = square;
                     missedBestMove = null;
                     renderBoard();
@@ -439,10 +445,17 @@
 
                 renderBoard();
                 updateStatus();
-                setTimeout(makeComputerMove, 100);
+                
+                // 엔진이나 랜덤 모드일 때만 컴퓨터 호출
+                if (mode !== 'user' && game.turn() === 'b') {
+                    setTimeout(makeComputerMove, 100);
+                } else {
+                    // 유저 모드라면 연산 잠금을 즉시 해제하여 다음 사람(혹은 본인)이 바로 두게 함
+                    isCalculating = false; 
+                }
 
             } else {
-                if (piece && piece.color === 'w') {
+                if (piece && piece.color === game.turn()) {
                     selectedSquare = square;
                     missedBestMove = null;
                 } else {
@@ -456,6 +469,9 @@
             if (game.game_over() || game.turn() !== 'b' || isDemoMode) return;
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
+            // 안전장치
+            if (mode === 'user') return; 
+
             let moveObj = null;
 
             if (mode === 'engine') {
@@ -475,7 +491,6 @@
             updateStatus();
         }
 
-        // --- 4. 시범 모드 UI 처리 ---
         async function runAIDemo() {
             if (isCalculating || isDemoMode || game.game_over()) return;
             
@@ -491,11 +506,9 @@
             document.getElementById('feedback').innerText = "AI가 체크메이트 시범을 보여줍니다!";
             document.getElementById('feedback').style.color = "#8e44ad";
             
-            // 시범 시작 즉시 기본 컨트롤을 숨기고 복기 패널을 노출합니다.
             document.getElementById('controls').style.display = 'none';
             document.getElementById('replay-controls').style.display = 'flex';
             
-            // 단, 진행 중에는 네비게이션 버튼을 비활성화하여 클릭을 막습니다.
             const navBtns = document.querySelectorAll('.btn-nav');
             navBtns.forEach(btn => btn.disabled = true);
 
@@ -522,12 +535,10 @@
                 if (!isDemoMode) return;
             }
 
-            // 시범이 끝까지 완료된 경우에만 실행
             if (isDemoMode && (game.in_checkmate() || game.in_draw())) {
                 document.getElementById('feedback').innerText = "시범이 종료되었습니다. 아래 버튼으로 기보를 복기해보세요.";
                 document.getElementById('feedback').style.color = "#e67e22";
                 
-                // 시범이 종료되었으므로 네비게이션 버튼을 다시 활성화합니다.
                 navBtns.forEach(btn => btn.disabled = false);
                 currentDemoIndex = demoHistory.length - 1;
             }
