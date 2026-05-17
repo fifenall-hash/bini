@@ -69,13 +69,12 @@
         </svg>
     </div>
 
-    <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
-            <!-- 텍스트 수정 및 유저 모드 추가 -->
-            <label><input type="radio" name="mode" value="random"> 랜덤</label>
-            <label><input type="radio" name="mode" value="engine" checked> 엔진</label>
-            <label><input type="radio" name="mode" value="user"> 유저</label>
+            <!-- onchange 이벤트를 추가하여 모드 변경 시 즉각 감지하도록 수정 -->
+            <label><input type="radio" name="mode" value="random" onchange="handleModeChange()"> 랜덤</label>
+            <label><input type="radio" name="mode" value="engine" checked onchange="handleModeChange()"> 엔진</label>
+            <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
         </div>
         <div class="btn-group">
             <button class="btn-new" onclick="newGame('random')">무작위 새 연습</button>
@@ -84,7 +83,6 @@
         </div>
     </div>
 
-    <!-- 복기 컨트롤 영역 -->
     <div id="replay-controls" style="display: none;">
         <div class="nav-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
@@ -360,7 +358,6 @@
                 counterEl.innerText = "50수 제한에 도달하여 무승부 처리되었습니다.";
                 counterEl.style.color = "#e74c3c";
             } else if (!isCalculating && !isDemoMode) {
-                // 유저 모드를 고려한 현재 턴 표시
                 statusEl.innerText = game.turn() === 'w' ? "현재 턴: 백" : "현재 턴: 흑";
             } else if (isDemoMode && document.getElementById('replay-controls').style.display === 'block') {
                 statusEl.innerText = "AI 기보 복기 중";
@@ -393,18 +390,27 @@
             updateStatus();
         }
 
+        // --- 새로 추가된 모드 변경 감지 함수 ---
+        function handleModeChange() {
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            
+            // 현재 흑의 차례이고, 변경된 모드가 컴퓨터 모드(engine 또는 random)이며,
+            // 게임오버나 엔진 연산 중이 아닐 때 방어 로직을 깨워줍니다.
+            if (game.turn() === 'b' && mode !== 'user' && !isCalculating && !isDemoMode && !game.game_over() && document.getElementById('replay-controls').style.display === 'none') {
+                makeComputerMove();
+            }
+        }
+
         async function handleSquareClick(square) {
             if (game.game_over() || isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
             
-            // 흑의 턴일 때, '유저' 모드가 아니라면 조작을 막습니다.
             if (game.turn() === 'b' && mode !== 'user') return;
 
             const piece = game.get(square);
 
             if (selectedSquare === null) {
-                // 백이든 흑이든 현재 턴에 맞는 기물만 선택되게 수정
                 if (piece && piece.color === game.turn()) {
                     selectedSquare = square;
                     missedBestMove = null;
@@ -446,11 +452,9 @@
                 renderBoard();
                 updateStatus();
                 
-                // 엔진이나 랜덤 모드일 때만 컴퓨터 호출
                 if (mode !== 'user' && game.turn() === 'b') {
                     setTimeout(makeComputerMove, 100);
                 } else {
-                    // 유저 모드라면 연산 잠금을 즉시 해제하여 다음 사람(혹은 본인)이 바로 두게 함
                     isCalculating = false; 
                 }
 
@@ -469,10 +473,10 @@
             if (game.game_over() || game.turn() !== 'b' || isDemoMode) return;
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
-            // 안전장치
             if (mode === 'user') return; 
 
             let moveObj = null;
+            isCalculating = true; // 이동 중복 방지를 위한 락(Lock)
 
             if (mode === 'engine') {
                 document.getElementById('status').innerText = "컴퓨터가 방어 중... (1.5초)";
