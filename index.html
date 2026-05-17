@@ -31,7 +31,7 @@
         .btn-group { display: flex; gap: 10px; width: 100%; flex-wrap: wrap; justify-content: center;}
         .nav-group { display: flex; gap: 5px; width: 100%; flex-wrap: nowrap; justify-content: space-between; }
         
-        button { padding: 10px 5px; font-size: 14px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 30%; transition: opacity 0.2s; }
+        button { padding: 10px 5px; font-size: 14px; font-weight: bold; color: white; border: none; border-radius: 8px; flex: 1; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 22%; transition: opacity 0.2s; }
         button:active:not(:disabled) { transform: translateY(2px); }
         
         button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; transform: none; }
@@ -40,6 +40,11 @@
         .btn-new:active:not(:disabled) { background-color: #45a049; }
         .btn-new-center { background-color: #2980b9; }
         .btn-new-center:active:not(:disabled) { background-color: #2471a3; }
+        
+        /* 새로 추가된 재시작 버튼 스타일 (주황색) */
+        .btn-restart { background-color: #f39c12; }
+        .btn-restart:active:not(:disabled) { background-color: #e67e22; }
+        
         .btn-demo { background-color: #8e44ad; }
         .btn-demo:active:not(:disabled) { background-color: #732d91; }
         
@@ -69,9 +74,9 @@
         </svg>
     </div>
 
+    <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
-            <!-- onchange 이벤트를 추가하여 모드 변경 시 즉각 감지하도록 수정 -->
             <label><input type="radio" name="mode" value="random" onchange="handleModeChange()"> 랜덤</label>
             <label><input type="radio" name="mode" value="engine" checked onchange="handleModeChange()"> 엔진</label>
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
@@ -79,10 +84,13 @@
         <div class="btn-group">
             <button class="btn-new" onclick="newGame('random')">무작위 새 연습</button>
             <button class="btn-new-center" onclick="newGame('center')">중앙 새 연습</button>
-            <button class="btn-demo" onclick="runAIDemo()">AI 시범 보기</button>
+            <!-- 재시작 버튼 추가 및 이름 변경 -->
+            <button class="btn-restart" onclick="restartGame()">재시작</button>
+            <button class="btn-demo" onclick="runAIDemo()">AI 시범</button>
         </div>
     </div>
 
+    <!-- 복기 컨트롤 영역 -->
     <div id="replay-controls" style="display: none;">
         <div class="nav-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
@@ -100,6 +108,9 @@
         let isCalculating = false;
         let isDemoMode = false;
         let missedBestMove = null;
+
+        // 재시작 기능을 위해 가장 처음 배치 상태를 저장할 변수 추가
+        let initialFenOfCurrentGame = "";
 
         let savedFenBeforeDemo = "";
         let demoHistory = [];
@@ -378,6 +389,9 @@
             const fen = type === 'center' ? generateRandomValidFEN_Center() : generateRandomValidFEN_Anywhere();
             game.load(fen);
             
+            // 현재 게임의 초기 상태를 저장하여 재시작할 때 사용할 수 있도록 합니다.
+            initialFenOfCurrentGame = fen;
+            
             selectedSquare = null;
             missedBestMove = null;
             isCalculating = false;
@@ -390,12 +404,29 @@
             updateStatus();
         }
 
-        // --- 새로 추가된 모드 변경 감지 함수 ---
+        // --- 새로 추가된 재시작 함수 ---
+        function restartGame() {
+            if (!initialFenOfCurrentGame) return; // 저장된 초기 상태가 없으면 무시
+            
+            stopDemoAndReset();
+            
+            // 저장해 두었던 게임 시작 FEN을 다시 불러옵니다.
+            game.load(initialFenOfCurrentGame);
+            
+            selectedSquare = null;
+            missedBestMove = null;
+            isCalculating = false;
+            
+            document.getElementById('feedback').innerText = "처음 상태로 되돌렸습니다. 다시 도전해 보세요!";
+            document.getElementById('feedback').style.color = "blue";
+            
+            renderBoard();
+            updateStatus();
+        }
+
         function handleModeChange() {
             const mode = document.querySelector('input[name="mode"]:checked').value;
             
-            // 현재 흑의 차례이고, 변경된 모드가 컴퓨터 모드(engine 또는 random)이며,
-            // 게임오버나 엔진 연산 중이 아닐 때 방어 로직을 깨워줍니다.
             if (game.turn() === 'b' && mode !== 'user' && !isCalculating && !isDemoMode && !game.game_over() && document.getElementById('replay-controls').style.display === 'none') {
                 makeComputerMove();
             }
@@ -476,7 +507,7 @@
             if (mode === 'user') return; 
 
             let moveObj = null;
-            isCalculating = true; // 이동 중복 방지를 위한 락(Lock)
+            isCalculating = true; 
 
             if (mode === 'engine') {
                 document.getElementById('status').innerText = "컴퓨터가 방어 중... (1.5초)";
