@@ -27,11 +27,9 @@
         
         #controls, #replay-controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
         
-        /* 라디오 버튼 그룹 정렬을 위한 스타일 */
         .mode-select { display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 5px; }
         .mode-label { font-weight: bold; color: #333; }
         
-        /* 새로운 버튼 레이아웃을 위한 래퍼(행) 스타일 */
         .btn-group-row { display: flex; gap: 10px; width: 100%; justify-content: center; }
         .nav-group { display: flex; gap: 5px; width: 100%; flex-wrap: nowrap; justify-content: space-between; }
         
@@ -46,10 +44,8 @@
         .btn-restart { background-color: #f39c12; }
         .btn-restart:active:not(:disabled) { background-color: #e67e22; }
         
-        /* 되돌리기 버튼 스타일 */
         .btn-undo { background-color: #7f8c8d; }
         .btn-undo:active:not(:disabled) { background-color: #95a5a6; }
-        
         .btn-demo { background-color: #8e44ad; }
         .btn-demo:active:not(:disabled) { background-color: #732d91; }
         
@@ -122,6 +118,10 @@
 
         let initialFenOfCurrentGame = "";
         let savedFenBeforeDemo = "";
+        
+        // 추가된 변수: 시범 들어가기 전까지 플레이어가 둔 모든 기보 기록
+        let savedMovesBeforeDemo = []; 
+        
         let demoHistory = [];
         let currentDemoIndex = 0;
 
@@ -429,33 +429,24 @@
             updateStatus();
         }
 
-        // --- 새로 추가된 되돌리기(Undo) 함수 ---
         function undoMove() {
-            // 연산 중이거나 복기(시범) 모드일 때는 작동하지 않도록 방어
             if (isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
-
-            // 기록된 수가 없으면(첫 턴이면) 무시
             if (game.history().length === 0) return;
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
             let moveUndone = null;
 
             if (mode === 'user') {
-                // 유저 모드: 가장 최근의 1수(반수)만 되돌립니다.
                 moveUndone = game.undo();
             } else {
-                // 랜덤, 엔진 모드: 컴퓨터가 둔 흑 수와 내가 둔 백 수까지 2수를 되돌립니다.
-                // 만약 컴퓨터가 두기 전(백의 턴)에 누른 상황이라도 1수만 무를 수 있도록 안전하게 처리
                 game.undo(); 
-                moveUndone = game.undo() || true; // 두 번째 undo가 null이어도 화면을 갱신하도록 true 보장
+                moveUndone = game.undo() || true; 
             }
 
             if (moveUndone) {
-                // 시각적 요소(화살표, 선택된 기물) 초기화
                 missedBestMove = null;
                 selectedSquare = null;
                 
-                // 되돌리기 효과음 (가벼운 느낌으로 기본 이동음 사용)
                 moveSound.currentTime = 0;
                 moveSound.play().catch(e => {});
 
@@ -578,6 +569,10 @@
             
             savedFenBeforeDemo = game.fen();
             
+            // --- 문제 해결의 핵심 ---
+            // 시범을 돌리기 전에 플레이어가 지금까지 두었던 기보를 모두 저장해 둡니다.
+            savedMovesBeforeDemo = game.history(); 
+            
             demoHistory = [];
             demoHistory.push(game.fen());
             
@@ -642,9 +637,18 @@
             document.getElementById('feedback').innerText = `기보 탐색 중: ${currentDemoIndex} / ${demoHistory.length - 1} 수`;
         }
 
+        // --- 버그가 수정된 시범 종료 함수 ---
         function exitDemo() {
             stopDemoAndReset();
-            game.load(savedFenBeforeDemo);
+            
+            // 1. 체스판을 가장 처음 상태(기보가 0인 상태)로 되돌립니다.
+            game.load(initialFenOfCurrentGame);
+            
+            // 2. 백업해 두었던 기보(History) 배열을 가져와서,
+            // 아무 소리 없이 순식간에 보드 위에서 재현하여 내부 기록을 복구합니다.
+            savedMovesBeforeDemo.forEach(move => {
+                game.move(move);
+            });
             
             document.getElementById('feedback').innerText = "시범 종료! 여기서부터 다시 고민해보세요.";
             document.getElementById('feedback').style.color = "blue";
