@@ -27,7 +27,8 @@
         
         #controls, #replay-controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
         
-        .mode-select { display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 5px; }
+        /* 라디오 버튼 묶음 설정 (모바일에서 넘치지 않도록 flex-wrap 추가) */
+        .mode-select { display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 5px; flex-wrap: wrap; justify-content: center; }
         .mode-label { font-weight: bold; color: #333; }
         
         .btn-group-row { display: flex; gap: 10px; width: 100%; justify-content: center; }
@@ -46,6 +47,7 @@
         
         .btn-undo { background-color: #7f8c8d; }
         .btn-undo:active:not(:disabled) { background-color: #95a5a6; }
+        
         .btn-demo { background-color: #8e44ad; }
         .btn-demo:active:not(:disabled) { background-color: #732d91; }
         
@@ -81,16 +83,16 @@
             <span class="mode-label">흑 차례:</span>
             <label><input type="radio" name="mode" value="random" onchange="handleModeChange()"> 랜덤</label>
             <label><input type="radio" name="mode" value="engine" checked onchange="handleModeChange()"> 엔진</label>
+            <!-- 새로 추가된 '로직' 라디오 버튼 -->
+            <label><input type="radio" name="mode" value="logic" onchange="handleModeChange()"> 로직</label>
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
         </div>
         
-        <!-- 1번째 줄 버튼 3개 -->
         <div class="btn-group-row">
             <button class="btn-new" onclick="newGame('random')">랜덤시작</button>
             <button class="btn-new-center" onclick="newGame('center')">중앙시작</button>
             <button class="btn-restart" onclick="restartGame()">재시작</button>
         </div>
-        <!-- 2번째 줄 버튼 2개 -->
         <div class="btn-group-row">
             <button class="btn-undo" onclick="undoMove()">되돌리기</button>
             <button class="btn-demo" onclick="runAIDemo()">엔진시범</button>
@@ -118,10 +120,7 @@
 
         let initialFenOfCurrentGame = "";
         let savedFenBeforeDemo = "";
-        
-        // 추가된 변수: 시범 들어가기 전까지 플레이어가 둔 모든 기보 기록
         let savedMovesBeforeDemo = []; 
-        
         let demoHistory = [];
         let currentDemoIndex = 0;
 
@@ -404,7 +403,7 @@
             missedBestMove = null;
             isCalculating = false;
             
-            const message = type === 'center' ? "정중앙 배치 완료! 비숍 길이 열려있습니다." : "완전 무작위 배치 완료! 첫 수를 둬보세요.";
+            const message = type === 'center' ? "중앙 배치 완료! 비숍 길이 열려있습니다." : "무작위 배치 완료! 첫 수를 둬보세요.";
             document.getElementById('feedback').innerText = message;
             document.getElementById('feedback').style.color = "blue";
             
@@ -436,6 +435,7 @@
             const mode = document.querySelector('input[name="mode"]:checked').value;
             let moveUndone = null;
 
+            // 로직 모드 역시 엔진과 동일하게 컴퓨터가 개입하므로 2수를 되돌립니다.
             if (mode === 'user') {
                 moveUndone = game.undo();
             } else {
@@ -544,10 +544,74 @@
             isCalculating = true; 
 
             if (mode === 'engine') {
-                document.getElementById('status').innerText = "컴퓨터가 방어 중... (1.5초)";
+                document.getElementById('status').innerText = "컴퓨터(엔진)가 방어 중... (1.5초)";
                 const bestMove = await getBestMove(game.fen(), 1500);
                 moveObj = game.move(bestMove, { sloppy: true });
-            } else {
+            } 
+            else if (mode === 'logic') {
+                document.getElementById('status').innerText = "컴퓨터(로직)가 방어 중...";
+                
+                const moves = game.moves({ verbose: true });
+                const boardState = game.board();
+                
+                // 백 비숍 찾기 (안전 모서리 확인용)
+                let bishop = null;
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (boardState[r][c] && boardState[r][c].type === 'b' && boardState[r][c].color === 'w') {
+                            bishop = { r, c };
+                            break;
+                        }
+                    }
+                }
+                
+                // 비숍이 존재한다면 비숍과 반대되는 색의 모서리(안전 지대) 두 곳을 찾습니다.
+                let safeCorners = [];
+                if (bishop) {
+                    const bColor = (bishop.r + bishop.c) % 2;
+                    const corners = [{r:0, c:0}, {r:0, c:7}, {r:7, c:0}, {r:7, c:7}];
+                    safeCorners = corners.filter(corner => (corner.r + corner.c) % 2 !== bColor);
+                }
+
+                // 각 이동 가능 칸에 대해 점수 계산
+                moves.forEach(m => {
+                    const toFile = files.indexOf(m.to.charAt(0));
+                    const toRank = 8 - parseInt(m.to.charAt(1)); // 체스판 좌표(0~7)로 변환
+                    
+                    // 1순위: 중앙(3.5, 3.5)과의 체비쇼프 거리 (숫자가 작을수록 중앙에 가깝습니다)
+                    m.centerDist = Math.max(Math.abs(toRank - 3.5), Math.abs(toFile - 3.5));
+                    
+                    // 2순위: 안전한 모서리와의 거리 (둘 중 더 가까운 쪽 기준)
+                    if (safeCorners.length > 0) {
+                        m.cornerDist = Math.min(
+                            Math.max(Math.abs(toRank - safeCorners[0].r), Math.abs(toFile - safeCorners[0].c)),
+                            Math.max(Math.abs(toRank - safeCorners[1].r), Math.abs(toFile - safeCorners[1].c))
+                        );
+                    } else {
+                        m.cornerDist = 0; // 비숍이 없는 예외 상황 방어
+                    }
+                });
+
+                // 점수를 기준으로 정렬 (1차: 중앙 거리 오름차순, 2차: 모서리 거리 오름차순)
+                moves.sort((a, b) => {
+                    if (a.centerDist !== b.centerDist) return a.centerDist - b.centerDist;
+                    return a.cornerDist - b.cornerDist;
+                });
+
+                // 가장 좋은 점수를 받은 칸들과 동일한 점수의 모든 칸을 필터링합니다.
+                const bestCenter = moves[0].centerDist;
+                const bestCorner = moves[0].cornerDist;
+                const topMoves = moves.filter(m => m.centerDist === bestCenter && m.cornerDist === bestCorner);
+
+                // 동점인 칸들 중 하나를 무작위로 선택합니다.
+                const chosenMove = topMoves[Math.floor(Math.random() * topMoves.length)];
+                
+                // 엔진과 비슷한 호흡을 위해 약간의 지연 시간을 줍니다.
+                await new Promise(resolve => setTimeout(resolve, 500));
+                moveObj = game.move(chosenMove.san);
+            } 
+            else {
+                // 랜덤 모드
                 const moves = game.moves();
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
                 moveObj = game.move(randomMove);
@@ -568,9 +632,6 @@
             missedBestMove = null;
             
             savedFenBeforeDemo = game.fen();
-            
-            // --- 문제 해결의 핵심 ---
-            // 시범을 돌리기 전에 플레이어가 지금까지 두었던 기보를 모두 저장해 둡니다.
             savedMovesBeforeDemo = game.history(); 
             
             demoHistory = [];
@@ -637,15 +698,10 @@
             document.getElementById('feedback').innerText = `기보 탐색 중: ${currentDemoIndex} / ${demoHistory.length - 1} 수`;
         }
 
-        // --- 버그가 수정된 시범 종료 함수 ---
         function exitDemo() {
             stopDemoAndReset();
-            
-            // 1. 체스판을 가장 처음 상태(기보가 0인 상태)로 되돌립니다.
             game.load(initialFenOfCurrentGame);
             
-            // 2. 백업해 두었던 기보(History) 배열을 가져와서,
-            // 아무 소리 없이 순식간에 보드 위에서 재현하여 내부 기록을 복구합니다.
             savedMovesBeforeDemo.forEach(move => {
                 game.move(move);
             });
