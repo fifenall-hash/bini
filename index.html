@@ -44,7 +44,6 @@
         .btn-restart { background-color: #f39c12; }
         .btn-restart:active:not(:disabled) { background-color: #e67e22; }
         
-        /* 새로 추가된 편집기 버튼 스타일 */
         .btn-editor { background-color: #16a085; }
         .btn-editor:active:not(:disabled) { background-color: #1abc9c; }
         
@@ -89,13 +88,11 @@
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
         </div>
         
-        <!-- 1번째 줄 버튼 3개 -->
         <div class="btn-group-row">
             <button class="btn-new" onclick="newGame('random')">랜덤시작</button>
             <button class="btn-new-center" onclick="newGame('center')">중앙시작</button>
             <button class="btn-restart" onclick="restartGame()">재시작</button>
         </div>
-        <!-- 2번째 줄 버튼 3개 (편집기, 되돌리기, 엔진시범) -->
         <div class="btn-group-row">
             <button class="btn-editor" onclick="startEditor()">편집기</button>
             <button class="btn-undo" onclick="undoMove()">되돌리기</button>
@@ -124,7 +121,7 @@
 
         // 편집기 모드를 위한 변수들
         let isEditorMode = false;
-        let editorStep = 0; // 0: WK, 1: WB, 2: WN, 3: BK
+        let editorStep = 0; 
         let editorPos = { wk: null, wb: null, wn: null };
 
         let initialFenOfCurrentGame = "";
@@ -178,14 +175,10 @@
             });
         }
 
-        // --- 수학적 안전 검증을 별도 함수로 분리 (편집기에서 재사용) ---
         function isSafeForBlackKing(r, c, wk, wb, wn) {
-            // 킹 인접 검사
             if (Math.abs(wk.r - r) <= 1 && Math.abs(wk.c - c) <= 1) return false;
-            // 나이트 공격 검사
             let ndx = Math.abs(wn.r - r), ndy = Math.abs(wn.c - c);
             if ((ndx === 1 && ndy === 2) || (ndx === 2 && ndy === 1)) return false;
-            // 비숍 공격 검사
             let bdx = Math.abs(wb.r - r), bdy = Math.abs(wb.c - c);
             if (bdx === bdy) {
                 let isBlocked = false;
@@ -344,14 +337,13 @@
             const feedbackEl = document.getElementById('feedback');
             const counterEl = document.getElementById('move-counter');
 
-            // 편집기 모드 안내 메시지 표시
             if (isEditorMode) {
                 statusEl.innerText = "편집 모드 진행 중";
                 const piecesName = ["백 킹(K)", "백 비숍(B)", "백 나이트(N)", "흑 킹(k)"];
                 feedbackEl.innerText = `빈 칸을 터치하여 ${piecesName[editorStep]}을 배치하세요.`;
-                feedbackEl.style.color = "#d35400"; // 눈에 잘 띄는 오렌지색
+                feedbackEl.style.color = "#d35400"; 
                 counterEl.innerText = "자유롭게 초기 보드를 구성할 수 있습니다.";
-                return; // 하단의 일반 게임 상태 업데이트는 건너뜀
+                return; 
             }
 
             const fenParts = game.fen().split(' ');
@@ -383,21 +375,20 @@
 
         function stopDemoAndReset() {
             isDemoMode = false;
-            isEditorMode = false; // 다른 버튼 누르면 편집 모드 강제 종료
+            isEditorMode = false;
             document.getElementById('replay-controls').style.display = 'none';
             document.getElementById('controls').style.display = 'flex';
             
             document.querySelectorAll('button').forEach(btn => btn.disabled = false);
         }
 
-        // --- 편집기 시작 함수 ---
         function startEditor() {
             stopDemoAndReset();
             isEditorMode = true;
             editorStep = 0;
             editorPos = { wk: null, wb: null, wn: null };
             
-            game.clear(); // 체스판을 텅 비웁니다.
+            game.clear(); 
             missedBestMove = null;
             selectedSquare = null;
             
@@ -480,21 +471,19 @@
         }
 
         async function handleSquareClick(square) {
-            if (game.game_over() || isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
+            // [버그 수정된 부분]: 편집 모드일 때는 game.game_over() 검사를 건너뛰어 터치가 무시되지 않도록 합니다.
+            if (!isEditorMode && game.game_over()) return;
+            if (isCalculating || isDemoMode || document.getElementById('replay-controls').style.display === 'block') return;
 
-            // --- 편집 모드 처리 흐름 ---
             if (isEditorMode) {
-                // 1. 이미 기물이 있는 자리인지 확인
                 if (game.get(square)) {
                     document.getElementById('feedback').innerText = "이미 기물이 있는 자리입니다. 빈 칸을 선택하세요.";
                     document.getElementById('feedback').style.color = "#e74c3c";
                     return;
                 }
 
-                // 2. 터치한 칸의 행(r), 열(c) 좌표 계산
                 const pos = { r: 8 - parseInt(square.charAt(1)), c: files.indexOf(square.charAt(0)) };
 
-                // 3. 순서에 맞게 기물 배치
                 if (editorStep === 0) {
                     game.put({ type: 'k', color: 'w' }, square);
                     editorPos.wk = pos;
@@ -505,11 +494,10 @@
                     game.put({ type: 'n', color: 'w' }, square);
                     editorPos.wn = pos;
                 } else if (editorStep === 3) {
-                    // 흑 킹을 놓을 때는 안전성 검증
                     if (!isSafeForBlackKing(pos.r, pos.c, editorPos.wk, editorPos.wb, editorPos.wn)) {
                         document.getElementById('feedback').innerText = "백에게 공격받는 자리입니다! 안전한 칸을 선택하세요.";
                         document.getElementById('feedback').style.color = "#e74c3c";
-                        return; // 배치를 거부하고 대기
+                        return; 
                     }
                     game.put({ type: 'k', color: 'b' }, square);
                 }
@@ -520,20 +508,18 @@
                 editorStep++;
                 renderBoard();
 
-                // 4. 배치가 모두 끝나면 게임 시작
                 if (editorStep === 4) {
                     isEditorMode = false;
-                    initialFenOfCurrentGame = game.fen(); // 현재 만든 커스텀 배치를 초기 상태로 저장
+                    initialFenOfCurrentGame = game.fen();
                     document.getElementById('feedback').innerText = "편집 완료! 첫 수를 둬보세요.";
                     document.getElementById('feedback').style.color = "blue";
                     updateStatus();
                 } else {
-                    updateStatus(); // 다음 기물 안내
+                    updateStatus(); 
                 }
-                return; // 편집 모드일 때는 일반 체스 로직 건너뜀
+                return; 
             }
 
-            // --- 일반 체스 플레이 로직 ---
             const mode = document.querySelector('input[name="mode"]:checked').value;
             
             if (game.turn() === 'b' && mode !== 'user') return;
