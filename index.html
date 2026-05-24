@@ -130,15 +130,18 @@
         const moveSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3');
         const captureSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3');
 
-        // 로직 모드: 1~7순위 맵핑 객체
+        // --- 업데이트된 10단계 우선순위 링 맵핑 ---
         const RING_MAP = {
             'd4':1, 'd5':1, 'e4':1, 'e5':1,
             'c4':2, 'c5':2, 'd3':2, 'd6':2, 'e3':2, 'e6':2, 'f4':2, 'f5':2,
-            'b4':3, 'b5':3, 'c3':3, 'c6':3, 'd2':3, 'd7':3, 'e2':3, 'e7':3, 'f3':3, 'f6':3, 'g4':3, 'g5':3,
-            'a4':4, 'a5':4, 'b3':4, 'b6':4, 'c2':4, 'c7':4, 'd1':4, 'd8':4, 'e1':4, 'e8':4, 'f2':4, 'f7':4, 'g3':4, 'g6':4, 'h4':4, 'h5':4,
-            'a3':5, 'a6':5, 'b2':5, 'b7':5, 'c1':5, 'c8':5, 'f1':5, 'f8':5, 'g2':5, 'g7':5, 'h3':5, 'h6':5,
-            'a2':6, 'a7':6, 'b1':6, 'b8':6, 'g1':6, 'g8':6, 'h2':6, 'h7':6,
-            'a1':7, 'a8':7, 'h1':7, 'h8':7
+            'c3':3, 'c6':3, 'f3':3, 'f6':3,
+            'b4':4, 'b5':4, 'd2':4, 'd7':4, 'e2':4, 'e7':4, 'g4':4, 'g5':4,
+            'b3':5, 'b6':5, 'c2':5, 'c7':5, 'f2':5, 'f7':5, 'g3':5, 'g6':5,
+            'b2':6, 'b7':6, 'g2':6, 'g7':6,
+            'a4':7, 'a5':7, 'd1':7, 'd8':7, 'e1':7, 'e8':7, 'h4':7, 'h5':7,
+            'a3':8, 'a6':8, 'c1':8, 'c8':8, 'f1':8, 'f8':8, 'h3':8, 'h6':8,
+            'a2':9, 'a7':9, 'b1':9, 'b8':9, 'g1':9, 'g8':9, 'h2':9, 'h7':9,
+            'a1':10, 'a8':10, 'h1':10, 'h8':10
         };
 
         function playSound(moveObj) {
@@ -599,14 +602,13 @@
                 
                 const moves = game.moves({ verbose: true });
                 
-                // 0순위: 잡을 수 있는 피스가 있으면 잡는다.
+                // 0순위: 잡을 수 있는 기물이 있으면 우선 포획
                 const captureMoves = moves.filter(m => m.captured);
                 let chosenMove;
                 
                 if (captureMoves.length > 0) {
                     chosenMove = captureMoves[Math.floor(Math.random() * captureMoves.length)];
                 } else {
-                    // 기물들의 위치를 파악합니다.
                     const boardState = game.board();
                     let kPos = null, nPos = null, bPos = null;
                     for (let r = 0; r < 8; r++) {
@@ -620,37 +622,27 @@
                         }
                     }
 
-                    // 각 칸의 링(Ring) 등급 및 거리 계산
                     moves.forEach(m => {
-                        m.ring = RING_MAP[m.to] || 7; // RING_MAP에 정의된 1~7순위 맵핑
+                        // 업데이트된 1~10순위 할당
+                        m.ring = RING_MAP[m.to] || 10; 
                         
                         const toFile = files.indexOf(m.to.charAt(0));
                         const toRank = 8 - parseInt(m.to.charAt(1));
 
-                        // 맨해튼 거리를 이용한 타이브레이커 요소 (숫자가 클수록 멀다는 뜻입니다)
                         m.distKnight = nPos ? Math.max(Math.abs(toFile - nPos.c), Math.abs(toRank - nPos.r)) : 0;
                         m.distKing = kPos ? Math.max(Math.abs(toFile - kPos.c), Math.abs(toRank - kPos.r)) : 0;
                         m.distBishop = bPos ? Math.max(Math.abs(toFile - bPos.c), Math.abs(toRank - bPos.r)) : 0;
                     });
 
-                    // 정렬 로직 (순위 결정)
+                    // 1. 링 오름차순 -> 2. 나이트 내림차순 -> 3. 킹 내림차순 -> 4. 비숍 내림차순
                     moves.sort((a, b) => {
-                        // 1. 링(Ring) 번호가 작을수록 우선 (오름차순)
                         if (a.ring !== b.ring) return a.ring - b.ring;
-                        
-                        // 2. 링 번호가 같다면, 나이트와 먼 곳(distKnight가 큰 값) 우선 (내림차순)
                         if (b.distKnight !== a.distKnight) return b.distKnight - a.distKnight;
-                        
-                        // 3. 같다면, 킹과 먼 곳 우선 (내림차순)
                         if (b.distKing !== a.distKing) return b.distKing - a.distKing;
-                        
-                        // 4. 같다면, 비숍과 먼 곳 우선 (내림차순)
                         if (b.distBishop !== a.distBishop) return b.distBishop - a.distBishop;
-                        
-                        return 0; // 모든 조건이 같음
+                        return 0;
                     });
 
-                    // 1등과 완전히 동일한 점수를 가진 칸들만 추려냅니다.
                     const best = moves[0];
                     const topMoves = moves.filter(m => 
                         m.ring === best.ring && 
@@ -659,7 +651,6 @@
                         m.distBishop === best.distBishop
                     );
                     
-                    // 5. 최종 동점자 중 무작위 선택
                     chosenMove = topMoves[Math.floor(Math.random() * topMoves.length)];
                 }
 
